@@ -1,5 +1,11 @@
 # MoXu 全书分析降本提效 TODO
 
+> **历史说明**：本文写于旧 Python 后端时期，文中 `backend/app/...` 代码路径均已不存在。
+> 当前 Java 后端对应实现在 `backend-java/src/main/java/com/moxu/`（分析链路见
+> `SessionController` 的 analyze / analyze-batch / analyze-sync 与 `ArchivistAgent`）。
+> 文中的优化思路（增量哈希跳过、批量模式开关、抽取合并、成本观测）仍然适用，
+> 作为后续优化方向的参考保留。
+
 ## 1. 目标与成功定义
 
 适用场景：

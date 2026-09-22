@@ -1,6 +1,5 @@
 package com.moxu.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.moxu.llm.LlmGateway;
 import com.moxu.model.entity.CharacterCard;
 import com.moxu.model.entity.StyleCard;
@@ -13,10 +12,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -33,11 +29,7 @@ public class CardController {
     private final BindingsController bindingsController;
 
     // ========== 角色卡 ==========
-
-    @GetMapping("/characters")
-    public List<String> listCharacterCards(@PathVariable String projectId) {
-        return cardStorage.listCharacterCards(projectId);
-    }
+    // 卡片名可含斜杠等路径不安全字符，增删改统一走 ?name= 查询参数
 
     @GetMapping("/characters/index")
     public List<CharacterCard> listCharacterCardsIndex(@PathVariable String projectId) {
@@ -46,18 +38,6 @@ public class CardController {
                 .filter(java.util.Optional::isPresent)
                 .map(java.util.Optional::get)
                 .toList();
-    }
-
-    @GetMapping("/characters/{characterName}")
-    public CharacterCard getCharacterCard(@PathVariable String projectId, @PathVariable String characterName) {
-        return cardStorage.getCharacterCard(projectId, characterName)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Character card not found"));
-    }
-
-    @GetMapping("/characters/by-name")
-    public CharacterCard getCharacterCardByName(@PathVariable String projectId,
-                                                @RequestParam("name") String characterName) {
-        return getCharacterCard(projectId, characterName);
     }
 
     @PostMapping("/characters")
@@ -72,10 +52,10 @@ public class CardController {
         }
     }
 
-    @PutMapping("/characters/{characterName}")
-    public Map<String, Object> updateCharacterCard(@PathVariable String projectId,
-                                                    @PathVariable String characterName,
-                                                    @RequestBody CharacterCard card) {
+    @PutMapping("/characters/by-name")
+    public Map<String, Object> updateCharacterCardByName(@PathVariable String projectId,
+                                                         @RequestParam("name") String characterName,
+                                                         @RequestBody CharacterCard card) {
         try {
             card.setName(characterName);
             cardStorage.saveCharacterCard(projectId, card);
@@ -87,15 +67,9 @@ public class CardController {
         }
     }
 
-    @PutMapping("/characters/by-name")
-    public Map<String, Object> updateCharacterCardByName(@PathVariable String projectId,
-                                                         @RequestParam("name") String characterName,
-                                                         @RequestBody CharacterCard card) {
-        return updateCharacterCard(projectId, characterName, card);
-    }
-
-    @DeleteMapping("/characters/{characterName}")
-    public Map<String, Object> deleteCharacterCard(@PathVariable String projectId, @PathVariable String characterName) {
+    @DeleteMapping("/characters/by-name")
+    public Map<String, Object> deleteCharacterCardByName(@PathVariable String projectId,
+                                                         @RequestParam("name") String characterName) {
         if (!cardStorage.deleteCharacterCard(projectId, characterName)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Character card not found");
         }
@@ -103,18 +77,7 @@ public class CardController {
         return Map.of("success", true, "message", "Character card deleted");
     }
 
-    @DeleteMapping("/characters/by-name")
-    public Map<String, Object> deleteCharacterCardByName(@PathVariable String projectId,
-                                                         @RequestParam("name") String characterName) {
-        return deleteCharacterCard(projectId, characterName);
-    }
-
     // ========== 世界观卡 ==========
-
-    @GetMapping("/world")
-    public List<String> listWorldCards(@PathVariable String projectId) {
-        return cardStorage.listWorldCards(projectId);
-    }
 
     @GetMapping("/world/index")
     public List<WorldCard> listWorldCardsIndex(@PathVariable String projectId) {
@@ -123,18 +86,6 @@ public class CardController {
                 .filter(java.util.Optional::isPresent)
                 .map(java.util.Optional::get)
                 .toList();
-    }
-
-    @GetMapping("/world/{cardName}")
-    public WorldCard getWorldCard(@PathVariable String projectId, @PathVariable String cardName) {
-        return cardStorage.getWorldCard(projectId, cardName)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "World card not found"));
-    }
-
-    @GetMapping("/world/by-name")
-    public WorldCard getWorldCardByName(@PathVariable String projectId,
-                                        @RequestParam("name") String cardName) {
-        return getWorldCard(projectId, cardName);
     }
 
     @PostMapping("/world")
@@ -149,10 +100,10 @@ public class CardController {
         }
     }
 
-    @PutMapping("/world/{cardName}")
-    public Map<String, Object> updateWorldCard(@PathVariable String projectId,
-                                                @PathVariable String cardName,
-                                                @RequestBody WorldCard card) {
+    @PutMapping("/world/by-name")
+    public Map<String, Object> updateWorldCardByName(@PathVariable String projectId,
+                                                     @RequestParam("name") String cardName,
+                                                     @RequestBody WorldCard card) {
         try {
             card.setName(cardName);
             cardStorage.saveWorldCard(projectId, card);
@@ -164,26 +115,14 @@ public class CardController {
         }
     }
 
-    @PutMapping("/world/by-name")
-    public Map<String, Object> updateWorldCardByName(@PathVariable String projectId,
-                                                     @RequestParam("name") String cardName,
-                                                     @RequestBody WorldCard card) {
-        return updateWorldCard(projectId, cardName, card);
-    }
-
-    @DeleteMapping("/world/{cardName}")
-    public Map<String, Object> deleteWorldCard(@PathVariable String projectId, @PathVariable String cardName) {
+    @DeleteMapping("/world/by-name")
+    public Map<String, Object> deleteWorldCardByName(@PathVariable String projectId,
+                                                     @RequestParam("name") String cardName) {
         if (!cardStorage.deleteWorldCard(projectId, cardName)) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "World card not found");
         }
         bindingsController.markAllBindingsStale(projectId, "world_card_deleted:" + cardName, true);
         return Map.of("success", true, "message", "World card deleted");
-    }
-
-    @DeleteMapping("/world/by-name")
-    public Map<String, Object> deleteWorldCardByName(@PathVariable String projectId,
-                                                     @RequestParam("name") String cardName) {
-        return deleteWorldCard(projectId, cardName);
     }
 
     // ========== 文风卡 ==========
@@ -263,123 +202,4 @@ public class CardController {
         return Map.of("description", resp.getContent().trim());
     }
 
-    /**
-     * 从大纲文本提取卡片
-     * POST /projects/{projectId}/cards/extract-from-outline
-     */
-    @PostMapping("/extract-from-outline")
-    public Map<String, Object> extractFromOutline(@PathVariable String projectId,
-                                                   @RequestBody Map<String, Object> body) {
-        String outlineText = (String) body.getOrDefault("outline_text", "");
-        if (outlineText.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "outline_text is required");
-        }
-        String text = outlineText.length() > 8000 ? outlineText.substring(0, 8000) + "..." : outlineText;
-        String systemPrompt = "你是一位专业的小说策划助手，擅长从大纲中提取角色和世界观信息。";
-        String userPrompt = "请从以下小说大纲中提取角色和世界观卡片信息，以 JSON 格式输出：\n\n"
-                + text
-                + "\n\n输出格式（JSON 数组）：\n"
-                + "[\n"
-                + "  {\"card_type\": \"character\", \"name\": \"角色名\", \"description\": \"简要描述\", \"aliases\": [], \"stars\": 2},\n"
-                + "  {\"card_type\": \"world\", \"name\": \"地点/组织/种族名\", \"description\": \"简要描述\", \"aliases\": [], \"category\": \"location/organization/race/item/concept\", \"rules\": [], \"stars\": 2}\n"
-                + "]\n\n要求：人物用 character；地点/组织/种族/功法/物品/概念/规则用 world。只输出 JSON，不要其他内容。";
-
-        var resp = llmGateway.chat(
-                List.of(Map.of("role", "system", "content", systemPrompt),
-                        Map.of("role", "user", "content", userPrompt)),
-                llmGateway.getProviderForAgent("extractor"), null, 2000);
-
-        String raw = resp.getContent().trim();
-        if (raw.startsWith("```")) {
-            raw = raw.replaceAll("^```[a-z]*\\n?", "").replaceAll("```$", "").trim();
-        }
-        try {
-            List<?> cards = new ObjectMapper().readValue(raw, List.class);
-            return Map.of("cards", normalizeOutlineCards(cards));
-        } catch (Exception e) {
-            log.warn("解析卡片 JSON 失败: {}", e.getMessage());
-            return Map.of("cards", List.of(), "raw", raw);
-        }
-    }
-
-    private List<Map<String, Object>> normalizeOutlineCards(List<?> cards) {
-        List<Map<String, Object>> result = new ArrayList<>();
-        if (cards == null) {
-            return result;
-        }
-        for (Object item : cards) {
-            if (!(item instanceof Map<?, ?> rawMap)) {
-                continue;
-            }
-            String name = String.valueOf(rawMap.get("name") == null ? "" : rawMap.get("name")).trim();
-            String description = String.valueOf(rawMap.get("description") == null ? "" : rawMap.get("description")).trim();
-            if (name.isBlank() || description.isBlank()) {
-                continue;
-            }
-
-            String cardType = normalizeOutlineCardType(
-                    rawMap.get("card_type"),
-                    rawMap.get("type"),
-                    rawMap.get("category"),
-                    rawMap.get("rules")
-            );
-
-            Map<String, Object> normalized = new LinkedHashMap<>();
-            normalized.put("card_type", cardType);
-            normalized.put("type", cardType);
-            normalized.put("name", name);
-            normalized.put("description", description);
-            normalized.put("aliases", normalizeStringList(rawMap.get("aliases")));
-            normalized.put("stars", clampStars(rawMap.get("stars")));
-            if ("world".equals(cardType)) {
-                normalized.put("category", String.valueOf(rawMap.get("category") == null ? "" : rawMap.get("category")).trim());
-                normalized.put("rules", normalizeStringList(rawMap.get("rules")));
-            }
-            result.add(normalized);
-        }
-        return result;
-    }
-
-    private String normalizeOutlineCardType(Object cardType, Object legacyType, Object category, Object rules) {
-        String value = String.valueOf(cardType != null ? cardType : legacyType != null ? legacyType : "")
-                .trim()
-                .toLowerCase(Locale.ROOT);
-        if (value.contains("world") || value.contains("世界") || value.contains("设定")
-                || value.contains("地点") || value.contains("组织") || value.contains("种族")
-                || value.contains("势力") || value.contains("规则") || value.contains("概念")
-                || value.contains("物品") || value.contains("功法")) {
-            return "world";
-        }
-        if (!String.valueOf(category == null ? "" : category).trim().isBlank()) {
-            return "world";
-        }
-        if (rules instanceof List<?> list && !list.isEmpty()) {
-            return "world";
-        }
-        return "character";
-    }
-
-    private List<String> normalizeStringList(Object raw) {
-        List<String> values = new ArrayList<>();
-        if (raw instanceof List<?> list) {
-            for (Object item : list) {
-                String value = String.valueOf(item == null ? "" : item).trim();
-                if (!value.isBlank() && !values.contains(value)) {
-                    values.add(value);
-                }
-            }
-        }
-        return values;
-    }
-
-    private int clampStars(Object raw) {
-        try {
-            int stars = Integer.parseInt(String.valueOf(raw).trim());
-            if (stars >= 1 && stars <= 3) {
-                return stars;
-            }
-        } catch (Exception ignored) {
-        }
-        return 2;
-    }
 }

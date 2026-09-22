@@ -28,25 +28,7 @@ public class CanonController {
     public List<Fact> listFacts(@PathVariable String projectId) {
         return canonStorage.listFacts(projectId);
     }
-    
-    @GetMapping("/facts/{factId:^F\\d+$}")
-    public Fact getFact(@PathVariable String projectId, @PathVariable String factId) {
-        return canonStorage.getFact(projectId, factId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Fact not found"));
-    }
 
-    @GetMapping("/facts/{chapter:^[Vv]\\d+[Cc]\\d+$}")
-    public List<Fact> getFactsByChapterPath(@PathVariable String projectId, @PathVariable String chapter) {
-        return canonStorage.listFacts(projectId).stream()
-                .filter(fact -> chapter.equalsIgnoreCase(String.valueOf(fact.getIntroducedIn())))
-                .toList();
-    }
-
-    @GetMapping("/facts/by-id/{factId}")
-    public Fact getFactById(@PathVariable String projectId, @PathVariable String factId) {
-        return getFact(projectId, factId);
-    }
-    
     @PostMapping("/facts")
     public Fact createFact(@PathVariable String projectId, @RequestBody Fact fact) {
         try {
@@ -57,23 +39,13 @@ public class CanonController {
         }
     }
 
-    // 前端使用 /canon/facts/manual 路径
-    @PostMapping("/facts/manual")
-    public Fact createFactManual(@PathVariable String projectId, @RequestBody Fact fact) {
-        try {
-            return canonStorage.saveFact(projectId, fact);
-        } catch (IOException e) {
-            log.error("创建事实失败", e);
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
-        }
-    }
-    
-    @PutMapping("/facts/{factId}")
-    public Fact updateFact(@PathVariable String projectId, @PathVariable String factId, @RequestBody Fact fact) {
+    // factId 可能含非 F\d+ 字符（如手动创建的 slug），统一走 by-id 前缀避免路径段歧义
+    @PutMapping("/facts/by-id/{factId}")
+    public Fact updateFactById(@PathVariable String projectId, @PathVariable String factId, @RequestBody Fact fact) {
         if (!canonStorage.getFact(projectId, factId).isPresent()) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Fact not found");
         }
-        
+
         try {
             fact.setId(factId);
             return canonStorage.saveFact(projectId, fact);
@@ -83,32 +55,13 @@ public class CanonController {
         }
     }
 
-    // 前端使用 /canon/facts/by-id/{factId} 路径
-    @PutMapping("/facts/by-id/{factId}")
-    public Fact updateFactById(@PathVariable String projectId, @PathVariable String factId, @RequestBody Fact fact) {
-        return updateFact(projectId, factId, fact);
-    }
-    
-    @DeleteMapping("/facts/{factId}")
-    public Map<String, Object> deleteFact(@PathVariable String projectId, @PathVariable String factId) {
+    @DeleteMapping("/facts/by-id/{factId}")
+    public Map<String, Object> deleteFactById(@PathVariable String projectId, @PathVariable String factId) {
         boolean success = canonStorage.deleteFact(projectId, factId);
         if (!success) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Fact not found");
         }
         return Map.of("success", true, "message", "Fact deleted");
-    }
-
-    // 前端使用 /canon/facts/by-id/{factId} 路径
-    @DeleteMapping("/facts/by-id/{factId}")
-    public Map<String, Object> deleteFactById(@PathVariable String projectId, @PathVariable String factId) {
-        return deleteFact(projectId, factId);
-    }
-
-    @GetMapping(value = "/facts", params = "chapter")
-    public List<Fact> listFactsByChapter(@PathVariable String projectId, @RequestParam String chapter) {
-        return canonStorage.listFacts(projectId).stream()
-                .filter(fact -> chapter.equals(fact.getIntroducedIn()))
-                .toList();
     }
 
     @GetMapping("/timeline")
@@ -118,12 +71,6 @@ public class CanonController {
             return canonStorage.listTimelineEventsByChapter(projectId, chapter);
         }
         return canonStorage.listTimelineEvents(projectId);
-    }
-
-    @GetMapping("/timeline/{chapter}")
-    public List<Map<String, Object>> listTimelineByChapter(@PathVariable String projectId,
-                                                           @PathVariable String chapter) {
-        return canonStorage.listTimelineEventsByChapter(projectId, chapter);
     }
 
     @PostMapping("/timeline")
@@ -168,13 +115,6 @@ public class CanonController {
         return canonStorage.listCharacterStates(projectId);
     }
 
-    @GetMapping("/character-state/{characterName}")
-    public Map<String, Object> getCharacterState(@PathVariable String projectId,
-                                                 @PathVariable String characterName) {
-        return canonStorage.getCharacterState(projectId, characterName)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Character state not found"));
-    }
-
     @PutMapping("/character-state/{characterName}")
     public Map<String, Object> saveCharacterState(@PathVariable String projectId,
                                                   @PathVariable String characterName,
@@ -188,15 +128,5 @@ public class CanonController {
             log.error("保存角色状态失败", e);
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         }
-    }
-
-    @PostMapping("/character-state")
-    public Map<String, Object> saveCharacterState(@PathVariable String projectId,
-                                                  @RequestBody Map<String, Object> state) {
-        String characterName = String.valueOf(state.getOrDefault("character", state.getOrDefault("name", "")));
-        if (characterName.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "character is required");
-        }
-        return saveCharacterState(projectId, characterName, state);
     }
 }

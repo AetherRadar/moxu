@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { projectsApi, projectScope, qk } from '@/api';
-import type { Project, ProjectCreateRequest, ProjectStats } from '@/api/types';
+import type { Project, ProjectCreateRequest } from '@/api/types';
 import { ApiError } from '@/lib/http';
 
 export function useProjects(): UseQueryResult<Project[]> {
@@ -13,16 +13,6 @@ export function useProject(projectId: string): UseQueryResult<Project> {
     queryKey: qk.project(projectId),
     queryFn: () => projectsApi.get(projectId),
     enabled: projectId !== '',
-  });
-}
-
-export function useProjectStats(projectId: string, enabled = true): UseQueryResult<ProjectStats> {
-  return useQuery({
-    queryKey: qk.projectStats(projectId),
-    queryFn: () => projectsApi.stats(projectId),
-    enabled: enabled && projectId !== '',
-    // 统计要遍历卡片和事实目录，比列表贵；列表页多张卡同时拉时放宽新鲜度
-    staleTime: 60_000,
   });
 }
 

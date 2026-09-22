@@ -19,6 +19,10 @@ if [[ -n "${JAVA_HOME:-}" ]]; then
     JAVA_BIN="$JAVA_HOME/bin/java"
 fi
 [[ -x "$JAVA_BIN" ]] || fail "JAVA_HOME does not contain an executable bin/java."
+# Fail fast on old JDKs: javac on JDK 8 reports text blocks as garbage characters.
+JAVA_MAJOR="$("$JAVA_BIN" -version 2>&1 | sed -n 's/.*version "\([0-9]*\).*/\1/p' | head -1)"
+[[ "$JAVA_MAJOR" =~ ^[0-9]+$ ]] || JAVA_MAJOR=0
+[[ "$JAVA_MAJOR" -ge 21 ]] || fail "JDK 21+ required, found: $("$JAVA_BIN" -version 2>&1 | head -1)"
 DATA_DIR="$(node -e 'console.log(require("path").resolve(process.argv[1], process.argv[2]))' "$ROOT_DIR" "$DATA_DIR")"
 
 check_ports() {

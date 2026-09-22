@@ -10,7 +10,6 @@ import com.moxu.llm.LlmResponse;
 import com.moxu.model.entity.ChapterSummary;
 import com.moxu.model.entity.DeAiRewriteConfig;
 import com.moxu.model.entity.Draft;
-import com.moxu.model.entity.ReviewResult;
 import com.moxu.model.entity.SceneBrief;
 import com.moxu.orchestrator.OrchestratorPool;
 import com.moxu.storage.CanonStorage;
@@ -303,19 +302,6 @@ public class DraftController {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Chapter summary not found"));
     }
     
-    @PostMapping("/{chapter}/summary")
-    public Map<String, Object> saveChapterSummaryPost(@PathVariable String projectId, @PathVariable String chapter,
-                                                   @RequestBody ChapterSummary summary) {
-        try {
-            summary.setChapter(chapter);
-            draftStorage.saveChapterSummary(projectId, summary);
-            return Map.of("success", true, "message", "Summary saved");
-        } catch (IOException e) {
-            log.error("保存章节摘要失败", e);
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
-        }
-    }
-    
     @PutMapping("/{chapter}/summary")
     public Map<String, Object> saveChapterSummary(@PathVariable String projectId, @PathVariable String chapter,
                                                    @RequestBody ChapterSummary summary) {
@@ -335,24 +321,7 @@ public class DraftController {
     public List<String> listDraftVersions(@PathVariable String projectId, @PathVariable String chapter) {
         return draftStorage.listDraftVersions(projectId, chapter);
     }
-    
-    @GetMapping("/{chapter}/review")
-    public ReviewResult getReview(@PathVariable String projectId, @PathVariable String chapter) {
-        return draftStorage.getReview(projectId, chapter)
-                .orElseGet(() -> {
-                    Draft draft = draftStorage.getLatestDraft(projectId, chapter)
-                            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Review not found"));
-                    String version = draft.getVersion() != null && !draft.getVersion().isBlank() ? draft.getVersion() : "current";
-                    ReviewResult review = editorAgent.reviewDraft(projectId, chapter, version, draft.getContent());
-                    try {
-                        draftStorage.saveReview(projectId, chapter, review);
-                    } catch (IOException e) {
-                        log.warn("按需生成 review 后保存失败: {}", e.getMessage());
-                    }
-                    return review;
-                });
-    }
-    
+
     // ========== 内容更新 ==========
     
     @PutMapping("/{chapter}/content")

@@ -1,5 +1,5 @@
 import { http, seg, Timeout } from '@/lib/http';
-import type { Project, ProjectCreateRequest, ProjectStats } from './types';
+import type { Project, ProjectCreateRequest } from './types';
 
 const base = '/projects';
 
@@ -7,8 +7,6 @@ export const projectsApi = {
   list: () => http.get<Project[]>(base),
 
   get: (projectId: string) => http.get<Project>(`${base}/${seg(projectId)}`),
-
-  stats: (projectId: string) => http.get<ProjectStats>(`${base}/${seg(projectId)}/stats`),
 
   create: (body: ProjectCreateRequest) => http.post<Project>(base, { body }),
 

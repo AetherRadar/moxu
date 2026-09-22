@@ -11,7 +11,6 @@ export const qk = {
 
   projects: ['projects'] as const,
   project: (projectId: string) => ['projects', projectId] as const,
-  projectStats: (projectId: string) => ['projects', projectId, 'stats'] as const,
 
   volumes: (projectId: string) => ['projects', projectId, 'volumes'] as const,
   volumeSummary: (projectId: string, volumeId: string) =>

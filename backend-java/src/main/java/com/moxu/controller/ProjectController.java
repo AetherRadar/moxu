@@ -1,9 +1,6 @@
 package com.moxu.controller;
 
 import com.moxu.model.entity.Project;
-import com.moxu.storage.CardStorage;
-import com.moxu.storage.CanonStorage;
-import com.moxu.storage.DraftStorage;
 import com.moxu.storage.ProjectStorage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,9 +22,6 @@ import java.util.Map;
 public class ProjectController {
     
     private final ProjectStorage projectStorage;
-    private final CardStorage cardStorage;
-    private final CanonStorage canonStorage;
-    private final DraftStorage draftStorage;
     
     @GetMapping("")
     public List<Project> listProjects() {
@@ -52,39 +46,6 @@ public class ProjectController {
     public Project getProject(@PathVariable String projectId) {
         return projectStorage.getProject(projectId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Project not found"));
-    }
-    
-    @GetMapping("/{projectId}/stats")
-    public Map<String, Object> getProjectStats(@PathVariable String projectId) {
-        // 统计角色数
-        int characterCount = cardStorage.listCharacterCards(projectId).size();
-        
-        // 统计事实数
-        int factCount = canonStorage.listFacts(projectId).size();
-        
-        // 统计章节数
-        List<String> chapters = draftStorage.listChapters(projectId);
-        int chapterCount = chapters.size();
-        
-        // 计算总字数
-        int totalWordCount = 0;
-        int completedChapters = 0;
-        
-        for (String chapter : chapters) {
-            var draft = draftStorage.getFinalDraft(projectId, chapter);
-            if (draft.isPresent()) {
-                totalWordCount += draft.get().length();
-                completedChapters++;
-            }
-        }
-        
-        return Map.of(
-                "total_word_count", totalWordCount,
-                "completed_chapters", completedChapters,
-                "in_progress_chapters", chapterCount - completedChapters,
-                "character_count", characterCount,
-                "fact_count", factCount
-        );
     }
     
     @PatchMapping("/{projectId}")

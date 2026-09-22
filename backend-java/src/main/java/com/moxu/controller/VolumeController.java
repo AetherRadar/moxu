@@ -2,7 +2,6 @@ package com.moxu.controller;
 
 import com.moxu.model.entity.Volume;
 import com.moxu.model.entity.VolumeSummary;
-import com.moxu.storage.DraftStorage;
 import com.moxu.storage.VolumeStorage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,7 +11,6 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
 import java.util.List;
-import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -25,7 +23,6 @@ import java.util.Map;
 public class VolumeController {
     
     private final VolumeStorage volumeStorage;
-    private final DraftStorage draftStorage;
     
     @GetMapping("")
     public List<Volume> listVolumes(@PathVariable String projectId) {
@@ -42,12 +39,6 @@ public class VolumeController {
             log.error("创建分卷失败", e);
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         }
-    }
-    
-    @GetMapping("/{volumeId}")
-    public Volume getVolume(@PathVariable String projectId, @PathVariable String volumeId) {
-        return volumeStorage.getVolume(projectId, volumeId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Volume " + volumeId + " not found"));
     }
     
     @PutMapping("/{volumeId}")
@@ -110,31 +101,6 @@ public class VolumeController {
             log.error("保存分卷摘要失败", e);
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         }
-    }
-
-    @GetMapping("/{volumeId}/stats")
-    public Map<String, Object> getVolumeStats(@PathVariable String projectId, @PathVariable String volumeId) {
-        Volume volume = volumeStorage.getVolume(projectId, volumeId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
-                        "Volume " + volumeId + " not found"));
-
-        List<String> chapters = draftStorage.listChapters(projectId).stream()
-                .filter(chapter -> chapter != null && chapter.startsWith(volumeId))
-                .toList();
-        int totalWords = chapters.stream()
-                .map(chapter -> draftStorage.getLatestDraft(projectId, chapter).orElse(null))
-                .filter(java.util.Objects::nonNull)
-                .mapToInt(draft -> Math.max(0, draft.getWordCount()))
-                .sum();
-
-        Map<String, Object> stats = new LinkedHashMap<>();
-        stats.put("volume_id", volumeId);
-        stats.put("title", volume.getTitle());
-        stats.put("chapter_count", chapters.size());
-        stats.put("total_words", totalWords);
-        stats.put("created_at", volume.getCreatedAt());
-        stats.put("updated_at", volume.getUpdatedAt());
-        return stats;
     }
 
     public record VolumeCreateRequest(String title, String summary, Integer order) {}

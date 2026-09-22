@@ -26,14 +26,6 @@ export interface Project {
   total_word_count: number;
 }
 
-export interface ProjectStats {
-  character_count: number;
-  world_count: number;
-  chapter_count: number;
-  total_word_count: number;
-  fact_count: number;
-}
-
 export interface ProjectCreateRequest {
   name: string;
   description?: string;

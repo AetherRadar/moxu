@@ -49,57 +49,6 @@ public class BookImportController {
         }
     }
 
-    @PostMapping(value = "/book", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public Map<String, Object> importBook(@PathVariable String projectId,
-                                          @RequestPart("file") MultipartFile file,
-                                          @RequestParam(name = "quick_init", defaultValue = "true") boolean quickInit,
-                                          @RequestParam(name = "overwrite_style", defaultValue = "false") boolean overwriteStyle,
-                                          @RequestParam(name = "overwrite_cards", defaultValue = "false") boolean overwriteCards,
-                                          @RequestParam(name = "auto_extract_titles", defaultValue = "false") boolean autoExtractTitles,
-                                          @RequestParam(name = "max_character_cards", defaultValue = "9") Integer maxCharacterCards,
-                                          @RequestParam(name = "max_world_cards", required = false) Integer maxWorldCards) {
-        try {
-            validateFile(file);
-            return bookImportService.importBook(
-                    projectId,
-                    file.getOriginalFilename(),
-                    file.getContentType(),
-                    file.getBytes(),
-                    quickInit,
-                    overwriteStyle,
-                    overwriteCards,
-                    autoExtractTitles,
-                    maxCharacterCards,
-                    maxWorldCards
-            );
-        } catch (IOException e) {
-            log.error("导入书籍失败: projectId={}", projectId, e);
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
-        }
-    }
-
-    @PostMapping(value = "/book/text", consumes = MediaType.APPLICATION_JSON_VALUE)
-    public Map<String, Object> importBookText(@PathVariable String projectId,
-                                              @RequestBody BookImportTextRequest request) {
-        try {
-            validateTextRequest(request);
-            return bookImportService.importText(
-                    projectId,
-                    request.getSourceName(),
-                    request.getText(),
-                    request.getQuickInit() == null || request.getQuickInit(),
-                    request.getOverwriteStyle() != null && request.getOverwriteStyle(),
-                    request.getOverwriteCards() != null && request.getOverwriteCards(),
-                    request.getAutoExtractTitles() != null && request.getAutoExtractTitles(),
-                    request.getMaxCharacterCards() != null ? request.getMaxCharacterCards() : 5,
-                    request.getMaxWorldCards()
-            );
-        } catch (IOException e) {
-            log.error("导入粘贴文本失败: projectId={}", projectId, e);
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
-        }
-    }
-
     @PostMapping(value = "/book/confirm", consumes = MediaType.APPLICATION_JSON_VALUE)
     public Map<String, Object> confirmBookImport(@PathVariable String projectId,
                                                  @RequestBody BookImportConfirmRequest request) {

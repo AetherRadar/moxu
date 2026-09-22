@@ -70,7 +70,6 @@ function invalidateStructure(client: ReturnType<typeof useQueryClient>, projectI
   void client.invalidateQueries({ queryKey: qk.chapterSummaries(projectId) });
   void client.invalidateQueries({ queryKey: qk.volumes(projectId) });
   void client.invalidateQueries({ queryKey: qk.project(projectId) });
-  void client.invalidateQueries({ queryKey: qk.projectStats(projectId) });
 }
 
 export interface CreateChapterInput {

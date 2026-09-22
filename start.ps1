@@ -69,6 +69,15 @@ try {
     $javaBin = (Get-Command java).Source
     if ($env:JAVA_HOME) { $javaBin = Join-Path $env:JAVA_HOME 'bin/java.exe' }
     if (-not (Test-Path $javaBin)) { throw 'JAVA_HOME does not contain bin/java.exe.' }
+    # Fail fast on old JDKs: javac on JDK 8 reports text blocks as garbage characters,
+    # which is unreadable in build logs. Check the version before invoking Maven.
+    $javaVersionLine = (& $javaBin -version 2>&1 | Select-Object -First 1).ToString()
+    $javaMajor = 0
+    if ($javaVersionLine -match '"(\d+)(?:\.(\d+))?') {
+        $javaMajor = [int]$Matches[1]
+        if ($javaMajor -eq 1 -and $Matches[2]) { $javaMajor = [int]$Matches[2] }
+    }
+    if ($javaMajor -lt 21) { throw "JDK 21+ required, found: $javaVersionLine" }
     $backendPort = [int](Resolve-Setting @('MOXU_BACKEND_PORT') '8080')
     $frontendPort = [int](Resolve-Setting @('MOXU_FRONTEND_PORT') '3000')
     $dataDir = Resolve-Setting @('MOXU_DATA_DIR') (Join-Path $rootDir 'data')

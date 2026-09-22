@@ -299,54 +299,6 @@ public class BookImportService {
         );
     }
 
-    public Map<String, Object> importBook(String projectId,
-                                          String filename,
-                                          String contentType,
-                                          byte[] bytes,
-                                          boolean quickInit,
-                                          boolean overwriteStyle,
-                                          boolean overwriteCards,
-                                          boolean autoExtractTitles,
-                                          Integer maxCharacterCards,
-                                          Integer maxWorldCards) throws IOException {
-        ParsedBook book = parseBook(filename, contentType, bytes);
-        return importParsedBook(
-                projectId,
-                filename,
-                book,
-                quickInit,
-                overwriteStyle,
-                overwriteCards,
-                autoExtractTitles,
-                maxCharacterCards,
-                maxWorldCards
-        );
-    }
-
-    public Map<String, Object> importText(String projectId,
-                                          String sourceName,
-                                          String text,
-                                          boolean quickInit,
-                                          boolean overwriteStyle,
-                                          boolean overwriteCards,
-                                          boolean autoExtractTitles,
-                                          Integer maxCharacterCards,
-                                          Integer maxWorldCards) throws IOException {
-        String resolvedSourceName = firstNonBlank(sourceName, "粘贴导入.txt");
-        ParsedBook book = parseTextBook(resolvedSourceName, text);
-        return importParsedBook(
-                projectId,
-                resolvedSourceName,
-                book,
-                quickInit,
-                overwriteStyle,
-                overwriteCards,
-                autoExtractTitles,
-                maxCharacterCards,
-                maxWorldCards
-        );
-    }
-
     private ParsedBook requestToParsedBook(String sourceName, BookImportConfirmRequest request) {
         List<ParsedVolume> volumes = new ArrayList<>();
         if (request.getVolumes() != null) {
