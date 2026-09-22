@@ -1,5 +1,7 @@
 import { lazy, useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   ArrowDown,
@@ -13,6 +15,7 @@ import {
   FolderPlus,
   Pencil,
   RefreshCw,
+  RotateCcw,
   ScanSearch,
   Search,
   Trash2,
@@ -35,6 +38,8 @@ import {
 } from '@/components/ui';
 import { LazyOverlay } from '@/components/ui/LazyOverlay';
 import { cn } from '@/lib/cn';
+import { ApiError } from '@/lib/http';
+import { projectScope, draftsApi } from '@/api';
 import { useShortcuts } from '@/hooks/useShortcuts';
 import { formatChapterLabel, formatVolumeLabel, parseChapterId } from '@/lib/chapter-id';
 import {
@@ -98,6 +103,7 @@ export function ExplorerPanel(): ReactNode {
   const [deletingVolume, setDeletingVolume] = useState<VolumeNode | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [analyzingChapter, setAnalyzingChapter] = useState<ChapterNode | null>(null);
+  const [rollbackChapter, setRollbackChapter] = useState<ChapterNode | null>(null);
   const [batchScope, setBatchScope] = useState<{
     label: string;
     chapters: { id: string; title: string }[];
@@ -115,6 +121,21 @@ export function ExplorerPanel(): ReactNode {
   const deleteChapter = useDeleteChapter(projectId);
   const deleteVolume = useDeleteVolume(projectId);
   const reorder = useReorderChapters(projectId);
+
+  /**
+   * 从某章起回滚：后端会连带清掉这一章及其之后的草稿正文、摘要、事实、时间线、
+   * 人物状态、绑定与记忆包，属不可恢复的破坏性操作——界面上要求逐字输入章节号。
+   */
+  const client = useQueryClient();
+  const rollback = useMutation({
+    mutationFn: (chapterId: string) => draftsApi.resetFrom(projectId, chapterId),
+    onSuccess: (data, chapterId) => {
+      void client.invalidateQueries({ queryKey: projectScope(projectId) });
+      const affected = Array.isArray(data.affected_chapters) ? data.affected_chapters.length : 0;
+      toast.success(`已回滚 ${formatChapterLabel(chapterId)} 起 ${affected} 章`);
+    },
+    onError: (error) => toast.error(error instanceof ApiError ? error.message : '回滚失败'),
+  });
 
   const openSearch = useCallback(() => {
     setSearching(true);
@@ -351,6 +372,7 @@ export function ExplorerPanel(): ReactNode {
                       onAddSub={(kind) => addSubChapter(row.chapter, kind)}
                       onMove={(offset) => moveChapter(row.chapter, offset)}
                       onAnalyze={() => setAnalyzingChapter(row.chapter)}
+                      onRollback={() => setRollbackChapter(row.chapter)}
                       onDelete={() => setDeletingChapter(row.chapter)}
                     />
                   )}
@@ -428,6 +450,26 @@ export function ExplorerPanel(): ReactNode {
             chapters={batchScope.chapters}
             scopeLabel={batchScope.label}
             onClose={() => setBatchScope(null)}
+          />
+        </LazyOverlay>
+      )}
+
+      {rollbackChapter !== null && (
+        <LazyOverlay>
+          <ConfirmDialog
+            open
+            onOpenChange={(open) => {
+              if (!open) setRollbackChapter(null);
+            }}
+            title={`从 ${formatChapterLabel(rollbackChapter.id)} 起回滚？`}
+            description="这一章及之后所有章节的草稿会被重置，摘要、事实、时间线、人物状态、绑定与记忆包一并删除；正典数据无法恢复。"
+            confirmLabel="回滚"
+            danger
+            requirePhrase={rollbackChapter.id}
+            loading={rollback.isPending}
+            onConfirm={() =>
+              rollback.mutate(rollbackChapter.id, { onSuccess: () => setRollbackChapter(null) })
+            }
           />
         </LazyOverlay>
       )}
@@ -553,6 +595,7 @@ function ChapterRow({
   onAddSub,
   onMove,
   onAnalyze,
+  onRollback,
   onDelete,
 }: {
   chapter: ChapterNode;
@@ -564,6 +607,7 @@ function ChapterRow({
   onAddSub: (kind: 'extra' | 'interlude') => void;
   onMove: (offset: -1 | 1) => void;
   onAnalyze: () => void;
+  onRollback: () => void;
   onDelete: () => void;
 }): ReactNode {
   // 受控打开：左键点 ⋯ 或右键点行都能拉起同一个菜单
@@ -647,6 +691,9 @@ function ChapterRow({
           下移
         </MenuItem>
         <MenuSeparator />
+        <MenuItem icon={<RotateCcw />} danger onSelect={onRollback}>
+          从本章回滚
+        </MenuItem>
         <MenuItem icon={<Trash2 />} danger onSelect={onDelete}>
           删除章节
         </MenuItem>
