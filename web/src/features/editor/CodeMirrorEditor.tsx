@@ -10,6 +10,7 @@ import {
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { highlightSelectionMatches, searchKeymap } from '@codemirror/search';
 import { cn } from '@/lib/cn';
+import { useLayoutStore } from '@/stores/layout';
 
 export interface EditorSelection {
   from: number;
@@ -57,6 +58,8 @@ export const CodeMirrorEditor = forwardRef<
 ) {
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
+  // dark 标志影响 CM 内部配色（选区/光标兜底），跟随全局主题
+  const theme = useLayoutStore((state) => state.theme);
 
   // 回调放 ref：父组件每次渲染的新函数不该触发编辑器重建
   const onDocChangeRef = useRef(onDocChange);
@@ -126,7 +129,7 @@ export const CodeMirrorEditor = forwardRef<
           },
           '.cm-placeholder': { color: 'var(--color-ink-600)' },
         },
-        { dark: true },
+        { dark: theme === 'dark' },
       ),
       EditorView.updateListener.of((update) => {
         if (update.docChanged) {
@@ -154,9 +157,10 @@ export const CodeMirrorEditor = forwardRef<
       view.destroy();
       viewRef.current = null;
     };
-    // docId 是唯一的重建依据：readOnly/回调变化不值得换整个文档视图
+    // 重建依据只有 docId 和主题：readOnly/回调变化不值得换整个文档视图；
+    // 切主题会丢一次撤销栈，属可接受代价
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [docId]);
+  }, [docId, theme]);
 
   useImperativeHandle(
     ref,

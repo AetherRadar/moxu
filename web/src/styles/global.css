@@ -107,6 +107,53 @@
     --prose-leading: 1.9;
   }
 
+  /* ── 浅色模式 ─────────────────────────────────────────────
+     ink 阶在组件里是纯语义色阶（950=最深背景、50=最亮正文），
+     亮色模式把整条阶翻转重定义，不需要改任何组件。
+     强调色同步翻转：浅阶变深（文字可辨），深阶变浅（选中底色）。 */
+  html.light {
+    color-scheme: light;
+
+    --color-ink-975: oklch(0.985 0.004 247);
+    --color-ink-950: oklch(0.968 0.005 247);
+    --color-ink-900: oklch(0.945 0.007 247);
+    --color-ink-850: oklch(0.92 0.008 247);
+    --color-ink-800: oklch(0.865 0.009 247);
+    --color-ink-700: oklch(0.775 0.011 247);
+    --color-ink-600: oklch(0.62 0.013 247);
+    --color-ink-500: oklch(0.53 0.013 247);
+    --color-ink-400: oklch(0.45 0.013 247);
+    --color-ink-300: oklch(0.36 0.013 247);
+    --color-ink-200: oklch(0.27 0.012 247);
+    --color-ink-100: oklch(0.21 0.011 247);
+    --color-ink-50: oklch(0.15 0.01 247);
+
+    --color-celadon-300: oklch(0.42 0.09 178);
+    --color-celadon-400: oklch(0.5 0.1 178);
+    --color-celadon-500: oklch(0.58 0.1 178);
+    --color-celadon-600: oklch(0.68 0.09 178);
+    --color-celadon-700: oklch(0.8 0.06 178);
+    --color-celadon-900: oklch(0.92 0.045 178);
+
+    --color-cinnabar-300: oklch(0.48 0.14 27);
+    --color-cinnabar-400: oklch(0.54 0.17 27);
+    --color-cinnabar-500: oklch(0.6 0.18 27);
+    --color-cinnabar-600: oklch(0.7 0.14 27);
+    --color-cinnabar-900: oklch(0.93 0.05 27);
+
+    --color-gamboge-300: oklch(0.48 0.11 80);
+    --color-gamboge-400: oklch(0.55 0.12 78);
+    --color-gamboge-500: oklch(0.64 0.13 75);
+    --color-gamboge-900: oklch(0.94 0.045 80);
+
+    --color-malachite-400: oklch(0.48 0.13 150);
+    --color-malachite-500: oklch(0.56 0.14 150);
+    --color-malachite-900: oklch(0.93 0.045 150);
+
+    --shadow-panel: 0 1px 2px oklch(0 0 0 / 0.07), 0 8px 24px -8px oklch(0 0 0 / 0.12);
+    --shadow-float: 0 2px 4px oklch(0 0 0 / 0.09), 0 16px 48px -12px oklch(0 0 0 / 0.18);
+  }
+
   html,
   body,
   #root {

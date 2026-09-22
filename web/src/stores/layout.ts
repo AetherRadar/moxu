@@ -11,13 +11,17 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 
 export type SideView = 'explorer' | 'outline' | 'cards' | 'facts' | 'search' | 'agents';
 
+export type Theme = 'dark' | 'light';
+
 interface LayoutState {
+  theme: Theme;
   sideView: SideView;
   sideVisible: boolean;
   sideWidth: number;
   /** 沉浸写作：隐藏两侧面板，只留正文 */
   focusMode: boolean;
 
+  toggleTheme: () => void;
   setSideView: (view: SideView) => void;
   /** 点击当前已激活的图标时收起面板，与常见 IDE 行为一致 */
   activateSideView: (view: SideView) => void;
@@ -35,11 +39,13 @@ const clamp = (value: number, min: number, max: number): number =>
 export const useLayoutStore = create<LayoutState>()(
   persist(
     (set, get) => ({
+      theme: 'dark',
       sideView: 'explorer',
       sideVisible: true,
       sideWidth: 288,
       focusMode: false,
 
+      toggleTheme: () => set({ theme: get().theme === 'dark' ? 'light' : 'dark' }),
       setSideView: (sideView) => set({ sideView, sideVisible: true }),
       activateSideView: (view) => {
         const { sideView, sideVisible } = get();
@@ -55,7 +61,8 @@ export const useLayoutStore = create<LayoutState>()(
       version: 1,
       storage: createJSONStorage(() => localStorage),
       // 宽度和面板选择值得记住，focusMode 每次进来都该是关的
-      partialize: ({ sideView, sideVisible, sideWidth }) => ({
+      partialize: ({ theme, sideView, sideVisible, sideWidth }) => ({
+        theme,
         sideView,
         sideVisible,
         sideWidth,
