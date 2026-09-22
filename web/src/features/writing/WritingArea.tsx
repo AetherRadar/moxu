@@ -1,6 +1,6 @@
 import { lazy, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { History, PenLine, Save, Sparkles, Wand2 } from 'lucide-react';
 import { draftsApi, qk } from '@/api';
@@ -8,7 +8,11 @@ import { ApiError } from '@/lib/http';
 import { formatChapterLabel, formatVolumeLabel } from '@/lib/chapter-id';
 import { Badge, Button, EmptyState, SkeletonList } from '@/components/ui';
 import { LazyOverlay } from '@/components/ui/LazyOverlay';
-import { CodeMirrorEditor, type EditorHandle, type EditorSelection } from '@/features/editor/CodeMirrorEditor';
+import {
+  CodeMirrorEditor,
+  type EditorHandle,
+  type EditorSelection,
+} from '@/features/editor/CodeMirrorEditor';
 import { useChapterTree } from '@/features/chapters/queries';
 import { useDraft, useAutosaveDraft } from '@/features/writing/queries';
 import { useWorkspaceStore } from '@/stores/workspace';
@@ -51,6 +55,13 @@ function ChapterEditor({ projectId, chapter }: { projectId: string; chapter: str
   const draft = useDraft(projectId, chapter);
   const tree = useChapterTree(projectId);
   const autosave = useAutosaveDraft(projectId, chapter);
+
+  // 终稿徽标：final.md 只由会话定稿写入，404 属正常状态，不重试
+  const finalDraft = useQuery({
+    queryKey: qk.draftFinal(projectId, chapter),
+    queryFn: () => draftsApi.final(projectId, chapter),
+    retry: false,
+  });
 
   const editorRef = useRef<EditorHandle>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -163,11 +174,10 @@ function ChapterEditor({ projectId, chapter }: { projectId: string; chapter: str
     const onUnload = (): void => {
       if (!dirtyRef.current || editorRef.current === null) return;
       // 同步 XHR 已死路一条，用 keepalive fetch 尽力而为
-      void draftsApi.autosave(
-        projectId,
-        chapter,
-        { content: editorRef.current.getDoc(), title: titleRef.current },
-      );
+      void draftsApi.autosave(projectId, chapter, {
+        content: editorRef.current.getDoc(),
+        title: titleRef.current,
+      });
     };
     window.addEventListener('keydown', onKey);
     window.addEventListener('beforeunload', onUnload);
@@ -246,31 +256,17 @@ function ChapterEditor({ projectId, chapter }: { projectId: string; chapter: str
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5">
+          {finalDraft.data !== undefined && <Badge tone="success">已定稿</Badge>}
           <SaveIndicator state={save.isPending ? 'saving' : saveState} savedAt={savedAt} />
           <span className="tnum text-2xs text-ink-500">{doc.length.toLocaleString()} 字</span>
           <div className="mx-1 h-4 w-px bg-ink-800" />
-          <Button
-            tone="ghost"
-            size="sm"
-            icon={<History />}
-            onClick={() => setDialog('versions')}
-          >
+          <Button tone="ghost" size="sm" icon={<History />} onClick={() => setDialog('versions')}>
             版本
           </Button>
-          <Button
-            tone="ghost"
-            size="sm"
-            icon={<Wand2 />}
-            onClick={() => setDialog('suggest')}
-          >
+          <Button tone="ghost" size="sm" icon={<Wand2 />} onClick={() => setDialog('suggest')}>
             修订
           </Button>
-          <Button
-            tone="primary"
-            size="sm"
-            icon={<Sparkles />}
-            onClick={() => setDialog('session')}
-          >
+          <Button tone="primary" size="sm" icon={<Sparkles />} onClick={() => setDialog('session')}>
             AI 写章
           </Button>
           <Button

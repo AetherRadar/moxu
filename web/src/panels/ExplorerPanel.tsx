@@ -17,6 +17,7 @@ import {
   RefreshCw,
   RotateCcw,
   ScanSearch,
+  ScrollText,
   Search,
   Trash2,
   Upload,
@@ -76,6 +77,9 @@ const AnalyzeChapterDialog = lazy(() =>
     default: m.AnalyzeChapterDialog,
   })),
 );
+const FinalDraftDialog = lazy(() =>
+  import('@/features/writing/FinalDraftDialog').then((m) => ({ default: m.FinalDraftDialog })),
+);
 const BatchAnalyzeDialog = lazy(() =>
   import('@/features/analysis/BatchAnalyzeDialog').then((m) => ({
     default: m.BatchAnalyzeDialog,
@@ -104,6 +108,7 @@ export function ExplorerPanel(): ReactNode {
   const [importOpen, setImportOpen] = useState(false);
   const [analyzingChapter, setAnalyzingChapter] = useState<ChapterNode | null>(null);
   const [rollbackChapter, setRollbackChapter] = useState<ChapterNode | null>(null);
+  const [finalChapter, setFinalChapter] = useState<ChapterNode | null>(null);
   const [batchScope, setBatchScope] = useState<{
     label: string;
     chapters: { id: string; title: string }[];
@@ -373,6 +378,7 @@ export function ExplorerPanel(): ReactNode {
                       onMove={(offset) => moveChapter(row.chapter, offset)}
                       onAnalyze={() => setAnalyzingChapter(row.chapter)}
                       onRollback={() => setRollbackChapter(row.chapter)}
+                      onViewFinal={() => setFinalChapter(row.chapter)}
                       onDelete={() => setDeletingChapter(row.chapter)}
                     />
                   )}
@@ -450,6 +456,16 @@ export function ExplorerPanel(): ReactNode {
             chapters={batchScope.chapters}
             scopeLabel={batchScope.label}
             onClose={() => setBatchScope(null)}
+          />
+        </LazyOverlay>
+      )}
+
+      {finalChapter !== null && (
+        <LazyOverlay>
+          <FinalDraftDialog
+            projectId={projectId}
+            chapter={finalChapter.id}
+            onClose={() => setFinalChapter(null)}
           />
         </LazyOverlay>
       )}
@@ -596,6 +612,7 @@ function ChapterRow({
   onMove,
   onAnalyze,
   onRollback,
+  onViewFinal,
   onDelete,
 }: {
   chapter: ChapterNode;
@@ -608,6 +625,7 @@ function ChapterRow({
   onMove: (offset: -1 | 1) => void;
   onAnalyze: () => void;
   onRollback: () => void;
+  onViewFinal: () => void;
   onDelete: () => void;
 }): ReactNode {
   // 受控打开：左键点 ⋯ 或右键点行都能拉起同一个菜单
@@ -671,6 +689,9 @@ function ChapterRow({
         </MenuItem>
         <MenuItem icon={<ScanSearch />} disabled={chapter.wordCount === 0} onSelect={onAnalyze}>
           分析本章
+        </MenuItem>
+        <MenuItem icon={<ScrollText />} disabled={chapter.wordCount === 0} onSelect={onViewFinal}>
+          查看终稿
         </MenuItem>
         {isNormal && (
           <>
