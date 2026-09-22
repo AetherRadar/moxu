@@ -57,7 +57,7 @@ export const draftsApi = {
   final: (projectId: string, chapter: string) =>
     http.get<JsonRecord>(`${base(projectId)}/${seg(chapter)}/final`),
 
-  // 后端保存后会串行重建绑定、review 和记忆包，所以给长超时
+  // 后端保存后会串行重建绑定和记忆包，所以给长超时
   save: (projectId: string, chapter: string, body: DraftSaveRequest) =>
     http.put<Draft>(`${base(projectId)}/${seg(chapter)}`, { body, timeout: Timeout.draftSave }),
 
