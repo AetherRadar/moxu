@@ -1,19 +1,14 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Activity, Bot, CircleStop, ListChecks, MemoryStick, RefreshCw } from 'lucide-react';
+import { Activity, Bot, CircleStop, Layers, ListChecks, MemoryStick, RefreshCw } from 'lucide-react';
 import type { JsonRecord } from '@/api/types';
+import { projectScope, retrievalApi } from '@/api';
 import { ApiError } from '@/lib/http';
 import { subscribeWs, wsPath, type WsEnvelope } from '@/lib/ws';
 import { formatChapterLabel } from '@/lib/chapter-id';
-import {
-  Badge,
-  Button,
-  ConfirmDialog,
-  EmptyState,
-  Panel,
-  SkeletonList,
-} from '@/components/ui';
+import { Badge, Button, ConfirmDialog, EmptyState, Panel, SkeletonList } from '@/components/ui';
 import {
   useBindings,
   useCancelSession,
@@ -24,7 +19,10 @@ import {
 } from '@/features/agents/queries';
 import { useWorkspaceStore } from '@/stores/workspace';
 
-const STATUS_LABEL: Record<string, { label: string; tone: 'accent' | 'success' | 'warning' | 'danger' | 'neutral' }> = {
+const STATUS_LABEL: Record<
+  string,
+  { label: string; tone: 'accent' | 'success' | 'warning' | 'danger' | 'neutral' }
+> = {
   idle: { label: '空闲', tone: 'neutral' },
   generating_brief: { label: '出简报', tone: 'warning' },
   waiting_user_input: { label: '等回答', tone: 'accent' },
@@ -48,6 +46,7 @@ interface TraceEvent {
 
 export function AgentsPanel(): ReactNode {
   const { projectId = '' } = useParams<{ projectId: string }>();
+  const client = useQueryClient();
   const chapter = useWorkspaceStore((state) => state.chapter);
 
   const status = useSessionStatus(projectId);
@@ -56,6 +55,19 @@ export function AgentsPanel(): ReactNode {
   const memoryPack = useMemoryPack(projectId, chapter);
   const relationships = useRelationships(projectId);
   const rebuildBindings = useRebuildBindings(projectId);
+
+  // 全量重建走 rebuild-batch：整本书顺序跑，可能要几分钟
+  const rebuildAll = useMutation({
+    mutationFn: () => retrievalApi.rebuildBindingsBatch(projectId, {}, undefined),
+    onSuccess: (data) => {
+      const results = Array.isArray(data.results) ? (data.results as JsonRecord[]) : [];
+      const failed = results.filter((item) => item.success !== true).length;
+      void client.invalidateQueries({ queryKey: projectScope(projectId) });
+      if (failed > 0) toast.error(`全部重建完成，${failed} 章失败`);
+      else toast.success(`已重建 ${results.length} 章绑定`);
+    },
+    onError: (error) => toast.error(error instanceof ApiError ? error.message : '全部重建失败'),
+  });
 
   const [events, setEvents] = useState<TraceEvent[]>([]);
   const idRef = useRef(0);
@@ -75,7 +87,7 @@ export function AgentsPanel(): ReactNode {
                 ? envelope.message
                 : typeof envelope.stage === 'string'
                   ? envelope.stage
-                  : envelope.type ?? '';
+                  : (envelope.type ?? '');
             next.push({
               id: idRef.current++,
               time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
@@ -153,18 +165,26 @@ export function AgentsPanel(): ReactNode {
                 tone="ghost"
                 size="xs"
                 icon={<RefreshCw />}
-                className="ml-auto"
                 loading={rebuildBindings.isPending}
                 onClick={() =>
                   rebuildBindings.mutate(chapter, {
-                    onError: (error) =>
-                      toast.error(error instanceof ApiError ? error.message : '重建失败'),
+                    onError: (error) => toast.error(error instanceof ApiError ? error.message : '重建失败'),
                   })
                 }
               >
                 重建
               </Button>
             )}
+            <Button
+              tone="ghost"
+              size="xs"
+              icon={<Layers />}
+              className={chapter === null ? 'ml-auto' : ''}
+              loading={rebuildAll.isPending}
+              onClick={() => rebuildAll.mutate()}
+            >
+              全部重建
+            </Button>
           </div>
           {chapter === null ? (
             <p className="mt-1.5 text-2xs text-ink-600">打开一章后显示它的实体绑定。</p>
@@ -186,11 +206,7 @@ export function AgentsPanel(): ReactNode {
           <div className="flex items-center gap-2">
             <MemoryStick className="size-4 text-celadon-500" />
             <span className="text-xs font-medium text-ink-100">记忆包</span>
-            {packExists ? (
-              <Badge tone="success">已建</Badge>
-            ) : (
-              <Badge tone="neutral">未建</Badge>
-            )}
+            {packExists ? <Badge tone="success">已建</Badge> : <Badge tone="neutral">未建</Badge>}
             {memoryPack.isPending && <SkeletonList rows={1} className="flex-1" />}
           </div>
           {packExists && (
@@ -223,17 +239,14 @@ export function AgentsPanel(): ReactNode {
           {relStats !== undefined && (
             <p className="mt-1.5 text-2xs text-ink-400">
               别名 {String(relStats.characters_indexed ?? 0)} · 章节提及{' '}
-              {String(relStats.chapters_indexed ?? 0)} · 关系对{' '}
-              {String(relStats.relation_pairs ?? 0)}
+              {String(relStats.chapters_indexed ?? 0)} · 关系对 {String(relStats.relation_pairs ?? 0)}
             </p>
           )}
         </section>
 
         {/* ── 链路时间线 ── */}
         <section className="flex min-h-0 flex-1 flex-col rounded-md border border-ink-800">
-          <p className="border-b border-ink-800 px-3 py-2 text-xs font-medium text-ink-100">
-            链路时间线
-          </p>
+          <p className="border-b border-ink-800 px-3 py-2 text-xs font-medium text-ink-100">链路时间线</p>
           <TraceList events={events} />
         </section>
       </div>
@@ -295,15 +308,9 @@ function TraceList({ events }: { events: TraceEvent[] }): ReactNode {
         <div key={event.id} className="flex gap-2 py-1">
           <span className="tnum w-14 shrink-0 text-2xs text-ink-600">{event.time}</span>
           <div className="min-w-0 flex-1">
-            <span className="mr-1.5 rounded bg-ink-800 px-1 text-2xs text-ink-400">
-              {event.agent}
-            </span>
-            {event.status !== '' && (
-              <span className="mr-1.5 text-2xs text-celadon-500">{event.status}</span>
-            )}
-            {event.round !== null && (
-              <span className="mr-1.5 text-2xs text-ink-600">R{event.round}</span>
-            )}
+            <span className="mr-1.5 rounded bg-ink-800 px-1 text-2xs text-ink-400">{event.agent}</span>
+            {event.status !== '' && <span className="mr-1.5 text-2xs text-celadon-500">{event.status}</span>}
+            {event.round !== null && <span className="mr-1.5 text-2xs text-ink-600">R{event.round}</span>}
             <span className="text-2xs leading-relaxed text-ink-300">{event.message}</span>
           </div>
         </div>
