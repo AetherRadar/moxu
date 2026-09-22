@@ -51,6 +51,7 @@ Java packages are `com.moxu`, and configuration keys are `moxu.*`. The Maven art
 
 ```bash
 mvn -f backend-java/pom.xml test
+npm --prefix web run lint
 npm --prefix web run typecheck
 npm --prefix web run test
 npm --prefix web run build

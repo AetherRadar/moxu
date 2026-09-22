@@ -51,6 +51,7 @@ Java 包名 `com.moxu`，配置键 `moxu.*`；Maven artifactId 为 `moxu-backend
 
 ```bash
 mvn -f backend-java/pom.xml test
+npm --prefix web run lint
 npm --prefix web run typecheck
 npm --prefix web run test
 npm --prefix web run build
