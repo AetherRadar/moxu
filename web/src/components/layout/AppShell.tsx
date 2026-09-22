@@ -17,31 +17,24 @@ export function AppShell({
   titleBar,
   side,
   main,
-  aux,
   statusBar,
   onOpenSettings,
 }: {
   titleBar: ReactNode;
   side: ReactNode;
   main: ReactNode;
-  aux?: ReactNode;
   statusBar: ReactNode;
   onOpenSettings: () => void;
 }): ReactNode {
   const sideVisible = useLayoutStore((state) => state.sideVisible);
   const sideWidth = useLayoutStore((state) => state.sideWidth);
   const setSideWidth = useLayoutStore((state) => state.setSideWidth);
-  const auxVisible = useLayoutStore((state) => state.auxVisible);
-  const auxWidth = useLayoutStore((state) => state.auxWidth);
-  const setAuxWidth = useLayoutStore((state) => state.setAuxWidth);
   const focusMode = useLayoutStore((state) => state.focusMode);
 
   const showSide = sideVisible && !focusMode;
-  const showAux = auxVisible && aux !== undefined && !focusMode;
 
   const shellStyle = {
     '--side-w': `${sideWidth}px`,
-    '--aux-w': `${auxWidth}px`,
   } as CSSProperties;
 
   return (
@@ -82,26 +75,6 @@ export function AppShell({
         <main className="flex min-w-0 flex-1 flex-col">
           <ErrorBoundary>{main}</ErrorBoundary>
         </main>
-
-        {showAux && (
-          <>
-            <ResizeHandle
-              cssVar="--aux-w"
-              direction="west"
-              min={layoutBounds.AUX_MIN}
-              max={layoutBounds.AUX_MAX}
-              defaultWidth={380}
-              onCommit={setAuxWidth}
-              label="调整右侧面板宽度"
-            />
-            <aside
-              style={{ width: 'var(--aux-w)' }}
-              className="min-w-0 shrink-0 overflow-hidden border-l border-ink-800 bg-ink-900"
-            >
-              <ErrorBoundary>{aux}</ErrorBoundary>
-            </aside>
-          </>
-        )}
       </div>
 
       {statusBar}

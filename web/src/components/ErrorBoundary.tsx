@@ -1,5 +1,4 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
-import { useTranslation } from 'react-i18next';
 
 interface Props {
   children: ReactNode;
@@ -44,11 +43,12 @@ export class ErrorBoundary extends Component<Props, State> {
 }
 
 function DefaultFallback({ error, onReset }: { error: Error; onReset: () => void }): ReactNode {
-  const { t } = useTranslation();
   return (
     <div className="flex h-full min-h-40 flex-col items-center justify-center gap-3 p-8 text-center">
-      <p className="text-ink-200 text-sm font-medium">{t('error.title')}</p>
-      <p className="text-ink-400 max-w-md text-xs leading-relaxed">{t('error.boundary')}</p>
+      <p className="text-ink-200 text-sm font-medium">出错了</p>
+      <p className="text-ink-400 max-w-md text-xs leading-relaxed">
+        界面崩了。这通常是前端的 bug，不会影响已保存的稿件。
+      </p>
       <pre className="text-cinnabar-300/80 bg-ink-900 border-ink-800 max-w-full overflow-auto rounded-md border px-3 py-2 text-left font-mono text-2xs">
         {error.message}
       </pre>
@@ -57,7 +57,7 @@ function DefaultFallback({ error, onReset }: { error: Error; onReset: () => void
         onClick={onReset}
         className="border-ink-700 text-ink-200 hover:border-celadon-600 hover:text-celadon-300 rounded-md border px-3 py-1.5 text-xs transition-colors"
       >
-        {t('action.retry')}
+        重试
       </button>
     </div>
   );

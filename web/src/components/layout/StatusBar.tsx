@@ -1,6 +1,5 @@
 import { type ReactNode } from 'react';
-import { useTranslation } from 'react-i18next';
-import { Maximize2, Minimize2, PanelRight } from 'lucide-react';
+import { Maximize2, Minimize2 } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { Dot, Tooltip } from '@/components/ui';
 import { useTraceStatus } from '@/hooks/useWsStatus';
@@ -19,19 +18,16 @@ export function StatusBar({
   center?: ReactNode;
   right?: ReactNode;
 }): ReactNode {
-  const { t } = useTranslation();
   const status = useTraceStatus();
   const focusMode = useLayoutStore((state) => state.focusMode);
   const toggleFocusMode = useLayoutStore((state) => state.toggleFocusMode);
-  const auxVisible = useLayoutStore((state) => state.auxVisible);
-  const setAuxVisible = useLayoutStore((state) => state.setAuxVisible);
 
   const connection =
     status === 'open'
       ? { tone: 'success' as const, text: 'backend', pulse: false }
       : status === 'connecting'
-        ? { tone: 'warning' as const, text: t('state.reconnecting'), pulse: true }
-        : { tone: 'danger' as const, text: t('state.offline'), pulse: false };
+        ? { tone: 'warning' as const, text: '重连中', pulse: true }
+        : { tone: 'danger' as const, text: '后端未连接', pulse: false };
 
   return (
     <footer className="flex h-[22px] shrink-0 items-center gap-3 border-t border-ink-800 bg-ink-975 px-2 text-2xs text-ink-500">
@@ -46,21 +42,6 @@ export function StatusBar({
 
       {center}
       {right}
-
-      <Tooltip content="右侧面板" shortcut="Ctrl+B" side="top">
-        <button
-          type="button"
-          aria-label="右侧面板"
-          aria-pressed={auxVisible}
-          onClick={() => setAuxVisible(!auxVisible)}
-          className={cn(
-            'flex size-4 items-center justify-center transition-colors [&_svg]:size-3',
-            auxVisible ? 'text-celadon-400' : 'hover:text-ink-200',
-          )}
-        >
-          <PanelRight />
-        </button>
-      </Tooltip>
 
       <Tooltip content={focusMode ? '退出沉浸' : '沉浸写作'} shortcut="Ctrl+Shift+F" side="top">
         <button

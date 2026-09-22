@@ -31,8 +31,7 @@ export function WorkspacePage(): ReactNode {
   const activateSideView = useLayoutStore((state) => state.activateSideView);
   const toggleSide = useLayoutStore((state) => state.toggleSide);
   const toggleFocusMode = useLayoutStore((state) => state.toggleFocusMode);
-  const auxVisible = useLayoutStore((state) => state.auxVisible);
-  const setAuxVisible = useLayoutStore((state) => state.setAuxVisible);
+
   const chapter = useWorkspaceStore((state) => state.chapter);
   const openProject = useWorkspaceStore((state) => state.openProject);
   const closeProject = useWorkspaceStore((state) => state.closeProject);
@@ -58,12 +57,11 @@ export function WorkspacePage(): ReactNode {
       'ctrl+4': () => activateSideView('facts'),
       'ctrl+5': () => activateSideView('search'),
       'ctrl+6': () => activateSideView('agents'),
-      'ctrl+b': () => setAuxVisible(!auxVisible),
       'ctrl+shift+b': () => toggleSide(),
       'ctrl+shift+f': () => toggleFocusMode(),
       'ctrl+,': () => setSettingsOpen(true),
     }),
-    [activateSideView, auxVisible, setAuxVisible, toggleSide, toggleFocusMode],
+    [activateSideView, toggleSide, toggleFocusMode],
   );
   useShortcuts(bindings);
 

@@ -1,21 +1,5 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-htmlcov/
-venv/
-env/
-ENV/
-*.egg-info/
 dist/
 build/
-*.spec
 
 # Local databases / caches
 *.sqlite
