@@ -14,6 +14,7 @@ import {
   FileText,
   FolderPlus,
   Pencil,
+  PenLine,
   RefreshCw,
   RotateCcw,
   ScanSearch,
@@ -23,6 +24,7 @@ import {
   Upload,
 } from 'lucide-react';
 import {
+  Badge,
   Button,
   EmptyState,
   IconButton,
@@ -40,7 +42,7 @@ import {
 import { LazyOverlay } from '@/components/ui/LazyOverlay';
 import { cn } from '@/lib/cn';
 import { ApiError } from '@/lib/http';
-import { projectScope, draftsApi } from '@/api';
+import { projectScope, draftsApi, qk, type GenerateTitlesBatchRequest } from '@/api';
 import { useShortcuts } from '@/hooks/useShortcuts';
 import { formatChapterLabel, formatVolumeLabel, parseChapterId } from '@/lib/chapter-id';
 import {
@@ -142,6 +144,22 @@ export function ExplorerPanel(): ReactNode {
     onError: (error) => toast.error(error instanceof ApiError ? error.message : '回滚失败'),
   });
 
+  /**
+   * 批量生成标题：后端按 3~8 章一组批量跑模型并直接改摘要里的标题，
+   * 前端只负责给进行中状态和刷新章节树。
+   */
+  const [titlesScope, setTitlesScope] = useState<string | null>(null);
+  const batchTitles = useMutation({
+    mutationFn: (body: GenerateTitlesBatchRequest) => draftsApi.generateTitlesBatch(projectId, body),
+    onSuccess: (data) => {
+      void client.invalidateQueries({ queryKey: qk.chapterSummaries(projectId) });
+      void client.invalidateQueries({ queryKey: qk.drafts(projectId) });
+      toast.success(`标题已生成：更新 ${Number(data.updated ?? 0)} 章，跳过 ${Number(data.skipped ?? 0)} 章`);
+    },
+    onError: (error) => toast.error(error instanceof ApiError ? error.message : '批量生成标题失败'),
+    onSettled: () => setTitlesScope(null),
+  });
+
   const openSearch = useCallback(() => {
     setSearching(true);
     // 等搜索框挂上 DOM 再聚焦
@@ -234,6 +252,7 @@ export function ExplorerPanel(): ReactNode {
       scroll={false}
       actions={
         <>
+          {titlesScope !== null && <Badge tone="warning">生成标题中…（{titlesScope}）</Badge>}
           <Tooltip content="搜索章节" shortcut="Ctrl+P">
             <IconButton
               label="搜索章节"
@@ -270,10 +289,20 @@ export function ExplorerPanel(): ReactNode {
               <MenuLabel>全书批量操作</MenuLabel>
               <MenuItem
                 icon={<ScanSearch />}
-                disabled={allWithContent.length === 0}
+                disabled={allWithContent.length === 0 || titlesScope !== null}
                 onSelect={() => setBatchScope({ label: '全书', chapters: allWithContent })}
               >
                 批量分析全书
+              </MenuItem>
+              <MenuItem
+                icon={<PenLine />}
+                disabled={allWithContent.length < 3 || titlesScope !== null}
+                onSelect={() => {
+                  setTitlesScope('全书');
+                  batchTitles.mutate({ chapters: allWithContent.map((chapter) => chapter.id) });
+                }}
+              >
+                批量生成全书标题
               </MenuItem>
             </MenuContent>
           </Menu>
@@ -359,6 +388,11 @@ export function ExplorerPanel(): ReactNode {
                           chapters: withContent(row.volume.chapters),
                         })
                       }
+                      onGenerateTitles={() => {
+                        setTitlesScope(formatVolumeLabel(row.volume.id, row.volume.title));
+                        batchTitles.mutate({ volume_id: row.volume.id });
+                      }}
+                      titlesBusy={titlesScope !== null}
                       onDelete={() => setDeletingVolume(row.volume)}
                     />
                   ) : (
@@ -519,6 +553,8 @@ function VolumeRow({
   onAddChapter,
   onRename,
   onAnalyzeVolume,
+  onGenerateTitles,
+  titlesBusy,
   onDelete,
 }: {
   row: Extract<TreeRow, { kind: 'volume' }>;
@@ -526,6 +562,8 @@ function VolumeRow({
   onAddChapter: () => void;
   onRename: () => void;
   onAnalyzeVolume: () => void;
+  onGenerateTitles: () => void;
+  titlesBusy: boolean;
   onDelete: () => void;
 }): ReactNode {
   const { volume, expanded } = row;
@@ -591,6 +629,9 @@ function VolumeRow({
         <MenuSeparator />
         <MenuItem icon={<ScanSearch />} disabled={analyzable === 0} onSelect={onAnalyzeVolume}>
           批量分析本卷（{analyzable} 章）
+        </MenuItem>
+        <MenuItem icon={<PenLine />} disabled={analyzable < 3 || titlesBusy} onSelect={onGenerateTitles}>
+          批量生成标题
         </MenuItem>
         <MenuSeparator />
         <MenuItem icon={<Trash2 />} danger onSelect={onDelete}>
