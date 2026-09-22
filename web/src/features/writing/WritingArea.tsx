@@ -179,11 +179,13 @@ function ChapterEditor({ projectId, chapter }: { projectId: string; chapter: str
     };
     const onUnload = (): void => {
       if (!dirtyRef.current || editorRef.current === null) return;
-      // 同步 XHR 已死路一条，用 keepalive fetch 尽力而为
-      void draftsApi.autosave(projectId, chapter, {
-        content: editorRef.current.getDoc(),
-        title: titleRef.current,
-      });
+      // 同步 XHR 已死路一条，keepalive fetch 尽力而为（body 上限 64KB，超长章丢弃不补）
+      void draftsApi.autosave(
+        projectId,
+        chapter,
+        { content: editorRef.current.getDoc(), title: titleRef.current },
+        { keepalive: true },
+      ).catch(() => undefined);
     };
     window.addEventListener('keydown', onKey);
     window.addEventListener('beforeunload', onUnload);
@@ -214,6 +216,13 @@ function ChapterEditor({ projectId, chapter }: { projectId: string; chapter: str
     [save],
   );
 
+  const isNew = draft.isError && draft.error instanceof ApiError && draft.error.status === 404;
+  const initialDoc = isNew ? '' : (draft.data?.content ?? '');
+
+  // 加载完成的正文同步进本地计数；之后每次改动由 onDocChange 接管。
+  // 必须放在 early return 之前：hooks 顺序不能随 isPending/isError 分支变化。
+  useEffect(() => setDoc(initialDoc), [initialDoc]);
+
   if (draft.isPending) {
     return (
       <div className="flex h-full flex-col p-6">
@@ -222,7 +231,6 @@ function ChapterEditor({ projectId, chapter }: { projectId: string; chapter: str
     );
   }
 
-  const isNew = draft.isError && draft.error instanceof ApiError && draft.error.status === 404;
   if (draft.isError && !isNew) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -238,10 +246,6 @@ function ChapterEditor({ projectId, chapter }: { projectId: string; chapter: str
       </div>
     );
   }
-  const initialDoc = isNew ? '' : (draft.data?.content ?? '');
-
-  // 加载完成的正文同步进本地计数；之后每次改动由 onDocChange 接管
-  useEffect(() => setDoc(initialDoc), [initialDoc]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">

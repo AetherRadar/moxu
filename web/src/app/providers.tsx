@@ -3,22 +3,20 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import { Toaster } from 'sonner';
 import { createQueryClient } from '@/lib/query-client';
-import { useLayoutStore } from '@/stores/layout';
 
-/** 主题 class 落到 <html> 上，Tailwind 的 dark 变体与 CSS 变量都依赖它。 */
-function useThemeClass(): void {
-  const theme = useLayoutStore((state) => state.theme);
+/** 应用固定深色：配色 token 只有一套暗色阶，不让系统偏好突然反色。 */
+function useDarkTheme(): void {
   useEffect(() => {
     const root = document.documentElement;
-    root.classList.toggle('dark', theme === 'dark');
-    root.style.colorScheme = theme;
-  }, [theme]);
+    root.classList.add('dark');
+    root.style.colorScheme = 'dark';
+  }, []);
 }
 
 export function AppProviders({ children }: { children: ReactNode }): ReactNode {
   // QueryClient 必须跨渲染稳定，否则每次重渲染都会丢掉整个缓存
   const clientRef = useRef(createQueryClient());
-  useThemeClass();
+  useDarkTheme();
 
   return (
     <QueryClientProvider client={clientRef.current}>

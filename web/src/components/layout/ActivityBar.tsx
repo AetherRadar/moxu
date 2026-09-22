@@ -1,14 +1,5 @@
 import { type ReactNode } from 'react';
-import {
-  Bot,
-  BookOpen,
-  FolderTree,
-  Landmark,
-  Search,
-  Settings,
-  SunMoon,
-  Users,
-} from 'lucide-react';
+import { Bot, BookOpen, FolderTree, Landmark, Search, Settings, Users } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { Tooltip } from '@/components/ui';
 import { useLayoutStore, type SideView } from '@/stores/layout';
@@ -37,7 +28,6 @@ export function ActivityBar({ onOpenSettings }: { onOpenSettings: () => void }):
   const sideView = useLayoutStore((state) => state.sideView);
   const sideVisible = useLayoutStore((state) => state.sideVisible);
   const activateSideView = useLayoutStore((state) => state.activateSideView);
-  const toggleTheme = useLayoutStore((state) => state.toggleTheme);
 
   return (
     <nav
@@ -70,16 +60,6 @@ export function ActivityBar({ onOpenSettings }: { onOpenSettings: () => void }):
 
       <div className="flex-1" />
 
-      <Tooltip content="切换深浅色" side="right">
-        <button
-          type="button"
-          aria-label="切换深浅色"
-          onClick={toggleTheme}
-          className="flex size-9 items-center justify-center text-ink-500 transition-colors hover:text-ink-200 [&_svg]:size-[18px]"
-        >
-          <SunMoon />
-        </button>
-      </Tooltip>
       <Tooltip content="设置" side="right" shortcut="Ctrl+,">
         <button
           type="button"

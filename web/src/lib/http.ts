@@ -41,6 +41,8 @@ export interface RequestOptions {
   timeout?: TimeoutValue;
   signal?: AbortSignal | undefined;
   headers?: Record<string, string> | undefined;
+  /** 页面卸载期间的请求需要 keepalive，否则浏览器会直接取消（body 限 64KB） */
+  keepalive?: boolean | undefined;
 }
 
 /** 后端错误的统一表示。所有失败路径都抛这个，调用方只需 catch 一种。 */
@@ -122,12 +124,13 @@ async function readPayload(response: Response): Promise<unknown> {
 }
 
 async function request<T>(method: string, path: string, options: RequestOptions = {}): Promise<T> {
-  const { query, body, form, timeout = Timeout.quick, signal: external, headers } = options;
+  const { query, body, form, timeout = Timeout.quick, signal: external, headers, keepalive } = options;
   const url = buildUrl(path, query);
 
   const init: RequestInit = {
     method,
     headers: { Accept: 'application/json', ...headers },
+    ...(keepalive ? { keepalive: true } : {}),
   };
 
   const signal = resolveSignal(timeout, external);

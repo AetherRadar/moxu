@@ -23,7 +23,7 @@ export function useAutosaveDraft(projectId: string, chapter: string) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: ({ body, signal }: { body: UpdateContentRequest; signal: AbortSignal }) =>
-      draftsApi.autosave(projectId, chapter, body, signal),
+      draftsApi.autosave(projectId, chapter, body, { signal }),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: qk.chapterSummaries(projectId) });
     },

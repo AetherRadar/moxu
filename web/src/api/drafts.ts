@@ -68,11 +68,17 @@ export const draftsApi = {
     }),
 
   /** 自动保存：只落盘正文，不触发下游重建，所以用短超时并允许被后续输入打断。 */
-  autosave: (projectId: string, chapter: string, body: UpdateContentRequest, signal?: AbortSignal) =>
+  autosave: (
+    projectId: string,
+    chapter: string,
+    body: UpdateContentRequest,
+    options?: { signal?: AbortSignal; keepalive?: boolean },
+  ) =>
     http.put<JsonRecord>(`${base(projectId)}/${seg(chapter)}/autosave`, {
       body,
       timeout: Timeout.quick,
-      signal,
+      signal: options?.signal,
+      keepalive: options?.keepalive,
     }),
 
   removeChapter: (projectId: string, chapter: string) =>
