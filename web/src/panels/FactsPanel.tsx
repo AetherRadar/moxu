@@ -8,6 +8,7 @@ import {
   Button,
   ConfirmDialog,
   EmptyState,
+  IconButton,
   Input,
   Panel,
   Select,
@@ -20,9 +21,11 @@ import {
   useCharacterStates,
   useCreateTimelineEvent,
   useDeleteFact,
+  useDeleteTimelineEvent,
   useFacts,
   useFactsTree,
   useTimeline,
+  useUpdateTimelineEvent,
 } from '@/features/cards/queries';
 import { formatChapterLabel, formatVolumeLabel } from '@/lib/chapter-id';
 import { useChapterTree } from '@/features/chapters/queries';
@@ -339,17 +342,49 @@ function FactsTabView({ projectId }: { projectId: string }): ReactNode {
 function TimelineTab({ projectId }: { projectId: string }): ReactNode {
   const timeline = useTimeline(projectId);
   const create = useCreateTimelineEvent(projectId);
+  const update = useUpdateTimelineEvent(projectId);
+  const removeEvent = useDeleteTimelineEvent(projectId);
   const tree = useChapterTree(projectId);
   const [form, setForm] = useState({ time: '', event: '', source: '' });
   const [formOpen, setFormOpen] = useState(false);
+  /** 非空表示表单在编辑这条事件，而不是新增 */
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<JsonRecord | null>(null);
 
   if (timeline.isPending) return <SkeletonList rows={6} />;
   const events = timeline.data ?? [];
 
+  const resetForm = (): void => {
+    setForm({ time: '', event: '', source: '' });
+    setEditingId(null);
+    setFormOpen(false);
+  };
+
+  const submit = (): void => {
+    const payload = {
+      time: form.time.trim() || null,
+      event: form.event.trim(),
+      source: form.source || null,
+    };
+    if (editingId !== null) {
+      update.mutate({ eventId: editingId, event: payload }, { onSuccess: resetForm });
+      return;
+    }
+    create.mutate(payload, { onSuccess: resetForm });
+  };
+
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex justify-end">
-        <Button tone="ghost" size="xs" icon={<Plus />} onClick={() => setFormOpen((v) => !v)}>
+        <Button
+          tone="ghost"
+          size="xs"
+          icon={<Plus />}
+          onClick={() => {
+            if (formOpen) resetForm();
+            else setFormOpen(true);
+          }}
+        >
           添加事件
         </Button>
       </div>
@@ -381,25 +416,11 @@ function TimelineTab({ projectId }: { projectId: string }): ReactNode {
             <Button
               tone="primary"
               size="xs"
-              loading={create.isPending}
+              loading={create.isPending || update.isPending}
               disabled={form.event.trim() === ''}
-              onClick={() =>
-                create.mutate(
-                  {
-                    time: form.time.trim() || null,
-                    event: form.event.trim(),
-                    source: form.source || null,
-                  },
-                  {
-                    onSuccess: () => {
-                      setForm({ time: '', event: '', source: '' });
-                      setFormOpen(false);
-                    },
-                  },
-                )
-              }
+              onClick={submit}
             >
-              添加
+              {editingId !== null ? '保存修改' : '添加'}
             </Button>
           </div>
         </div>
@@ -409,8 +430,12 @@ function TimelineTab({ projectId }: { projectId: string }): ReactNode {
         const time = String(event.time ?? event.date ?? '');
         const text = String(event.event ?? event.description ?? event.title ?? '');
         const source = typeof event.source === 'string' ? event.source : '';
+        const eventId = typeof event.id === 'string' ? event.id : '';
         return (
-          <section key={String(event.id ?? index)} className="flex gap-2.5 px-1 py-1.5">
+          <section
+            key={String(event.id ?? index)}
+            className="group flex gap-2.5 px-1 py-1.5 hover:bg-ink-850"
+          >
             <div className="flex w-16 shrink-0 flex-col items-end">
               <span className="text-2xs text-gamboge-400">{time !== '' ? time : '—'}</span>
               {source !== '' && (
@@ -419,12 +444,49 @@ function TimelineTab({ projectId }: { projectId: string }): ReactNode {
             </div>
             <div className="w-px shrink-0 self-stretch bg-ink-800" />
             <p className="min-w-0 flex-1 text-2xs leading-relaxed text-ink-300">{text}</p>
+            {eventId !== '' && (
+              <div className="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                <IconButton
+                  label="编辑事件"
+                  size="xs"
+                  onClick={() => {
+                    setForm({ time, event: text, source });
+                    setEditingId(eventId);
+                    setFormOpen(true);
+                  }}
+                >
+                  <Pencil />
+                </IconButton>
+                <IconButton label="删除事件" size="xs" tone="danger" onClick={() => setDeleting(event)}>
+                  <Trash2 />
+                </IconButton>
+              </div>
+            )}
           </section>
         );
       })}
 
       {events.length === 0 && (
         <EmptyState title="时间线还是空的" description="章节分析会自动补事件，也可以手动添加。" />
+      )}
+
+      {deleting !== null && (
+        <ConfirmDialog
+          open
+          onOpenChange={(open) => {
+            if (!open) setDeleting(null);
+          }}
+          title={`删除时间线事件 ${String(deleting.id ?? '')}？`}
+          description={String(deleting.event ?? deleting.description ?? '')}
+          confirmLabel="删除"
+          danger
+          loading={removeEvent.isPending}
+          onConfirm={() => {
+            const id = typeof deleting.id === 'string' ? deleting.id : '';
+            if (id !== '') removeEvent.mutate(id);
+            setDeleting(null);
+          }}
+        />
       )}
     </div>
   );

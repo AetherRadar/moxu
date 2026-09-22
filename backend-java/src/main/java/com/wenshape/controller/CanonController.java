@@ -11,6 +11,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 
 /**
  * 事实表管理接口
@@ -135,6 +136,31 @@ public class CanonController {
             log.error("保存时间线事件失败", e);
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         }
+    }
+
+    /** 编辑事件：id 走路径，body 里的 id 会被忽略。 */
+    @PutMapping("/timeline/{eventId}")
+    public Map<String, Object> updateTimelineEvent(@PathVariable String projectId,
+                                                   @PathVariable String eventId,
+                                                   @RequestBody Map<String, Object> event) {
+        try {
+            canonStorage.updateTimelineEvent(projectId, eventId, event);
+            return Map.of("success", true, "message", "Timeline event updated");
+        } catch (NoSuchElementException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Timeline event not found");
+        } catch (IOException e) {
+            log.error("更新时间线事件失败", e);
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
+    }
+
+    @DeleteMapping("/timeline/{eventId}")
+    public Map<String, Object> deleteTimelineEvent(@PathVariable String projectId,
+                                                   @PathVariable String eventId) {
+        if (!canonStorage.deleteTimelineEvent(projectId, eventId)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Timeline event not found");
+        }
+        return Map.of("success", true, "message", "Timeline event deleted");
     }
 
     @GetMapping("/character-state")

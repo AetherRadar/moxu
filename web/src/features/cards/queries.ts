@@ -33,11 +33,7 @@ export function useStyleCard(projectId: string) {
   });
 }
 
-function useCardMutation<T>(
-  keys: readonly unknown[],
-  fn: (vars: T) => Promise<unknown>,
-  success: string,
-) {
+function useCardMutation<T>(keys: readonly unknown[], fn: (vars: T) => Promise<unknown>, success: string) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: fn,
@@ -94,8 +90,12 @@ export function useSaveStyleCard(projectId: string) {
 /** AI 生成卡片描述：返回 {description}，调用方自己决定填到哪。 */
 export function useGenerateCardDescription(projectId: string) {
   return useMutation({
-    mutationFn: (body: { card_type: 'character' | 'world' | 'style'; name: string; style_hint?: string; note?: string }) =>
-      cardsApi.generateDescription(projectId, body),
+    mutationFn: (body: {
+      card_type: 'character' | 'world' | 'style';
+      name: string;
+      style_hint?: string;
+      note?: string;
+    }) => cardsApi.generateDescription(projectId, body),
     onError: (error) => toast.error(reason(error, '生成描述失败')),
   });
 }
@@ -168,5 +168,30 @@ export function useCreateTimelineEvent(projectId: string) {
       toast.success('时间线事件已添加');
     },
     onError: (error) => toast.error(reason(error, '添加失败')),
+  });
+}
+
+export function useUpdateTimelineEvent(projectId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ eventId, event }: { eventId: string; event: JsonRecord }) =>
+      canonApi.updateTimelineEvent(projectId, eventId, event),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: qk.timeline(projectId) });
+      toast.success('时间线事件已更新');
+    },
+    onError: (error) => toast.error(reason(error, '更新失败')),
+  });
+}
+
+export function useDeleteTimelineEvent(projectId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (eventId: string) => canonApi.deleteTimelineEvent(projectId, eventId),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: qk.timeline(projectId) });
+      toast.success('时间线事件已删除');
+    },
+    onError: (error) => toast.error(reason(error, '删除失败')),
   });
 }

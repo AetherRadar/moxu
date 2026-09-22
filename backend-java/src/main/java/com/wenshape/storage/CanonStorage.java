@@ -205,6 +205,57 @@ public class CanonStorage extends BaseStorage {
         return deleted;
     }
 
+    private static final java.util.regex.Pattern TIMELINE_ID_PATTERN =
+            java.util.regex.Pattern.compile("^[A-Za-z0-9_-]+$");
+
+    /** id 白名单校验，避免路径穿越。 */
+    private boolean isValidTimelineId(String eventId) {
+        return eventId != null && TIMELINE_ID_PATTERN.matcher(eventId).matches();
+    }
+
+    public Optional<Map<String, Object>> getTimelineEvent(String projectId, String eventId) {
+        if (!isValidTimelineId(eventId)) {
+            return Optional.empty();
+        }
+        Path filePath = getProjectPath(projectId).resolve("timeline").resolve(eventId + ".yaml");
+        if (!Files.exists(filePath)) {
+            return Optional.empty();
+        }
+        try {
+            Map<String, Object> event = new LinkedHashMap<>(readYamlAsMap(filePath));
+            event.putIfAbsent("id", eventId);
+            return Optional.of(event);
+        } catch (IOException e) {
+            log.error("读取时间线事件失败: {}", filePath, e);
+            return Optional.empty();
+        }
+    }
+
+    /** 更新既有事件：id 以路径为准（忽略 body 里的 id），文件必须已存在。 */
+    public void updateTimelineEvent(String projectId, String eventId, Map<String, Object> event)
+            throws IOException {
+        if (getTimelineEvent(projectId, eventId).isEmpty()) {
+            throw new NoSuchElementException("Timeline event not found: " + eventId);
+        }
+        Map<String, Object> payload = new LinkedHashMap<>(event);
+        payload.put("id", eventId);
+        Path filePath = getProjectPath(projectId).resolve("timeline").resolve(eventId + ".yaml");
+        writeYaml(filePath, payload);
+    }
+
+    public boolean deleteTimelineEvent(String projectId, String eventId) {
+        if (!isValidTimelineId(eventId)) {
+            return false;
+        }
+        Path filePath = getProjectPath(projectId).resolve("timeline").resolve(eventId + ".yaml");
+        try {
+            return Files.deleteIfExists(filePath);
+        } catch (IOException e) {
+            log.error("删除时间线事件失败: {}", filePath, e);
+            return false;
+        }
+    }
+
     public List<Map<String, Object>> listCharacterStates(String projectId) {
         return readCharacterStateHistory(projectId);
     }

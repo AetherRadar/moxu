@@ -39,8 +39,13 @@ export const canonApi = {
   createTimelineEvent: (projectId: string, body: TimelineEvent) =>
     http.post<JsonRecord>(`${base(projectId)}/timeline`, { body }),
 
-  characterStates: (projectId: string) =>
-    http.get<CharacterState[]>(`${base(projectId)}/character-state`),
+  updateTimelineEvent: (projectId: string, eventId: string, body: TimelineEvent) =>
+    http.put<JsonRecord>(`${base(projectId)}/timeline/${seg(eventId)}`, { body }),
+
+  deleteTimelineEvent: (projectId: string, eventId: string) =>
+    http.delete<JsonRecord>(`${base(projectId)}/timeline/${seg(eventId)}`),
+
+  characterStates: (projectId: string) => http.get<CharacterState[]>(`${base(projectId)}/character-state`),
 
   characterState: (projectId: string, name: string) =>
     http.get<CharacterState>(`${base(projectId)}/character-state/${seg(name)}`),
