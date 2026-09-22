@@ -13,6 +13,7 @@ import {
   FolderPlus,
   Pencil,
   RefreshCw,
+  ScanSearch,
   Search,
   Trash2,
   Upload,
@@ -65,6 +66,11 @@ const VolumeRenameDialog = lazy(() =>
 const BookImportDialog = lazy(() =>
   import('@/features/imports/BookImportDialog').then((m) => ({ default: m.BookImportDialog })),
 );
+const AnalyzeChapterDialog = lazy(() =>
+  import('@/features/analysis/AnalyzeChapterDialog').then((m) => ({
+    default: m.AnalyzeChapterDialog,
+  })),
+);
 
 const ROW_HEIGHT = 26;
 
@@ -86,6 +92,7 @@ export function ExplorerPanel(): ReactNode {
   const [deletingChapter, setDeletingChapter] = useState<ChapterNode | null>(null);
   const [deletingVolume, setDeletingVolume] = useState<VolumeNode | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [analyzingChapter, setAnalyzingChapter] = useState<ChapterNode | null>(null);
 
   const tree = useChapterTree(projectId);
   const chapter = useWorkspaceStore((state) => state.chapter);
@@ -308,6 +315,7 @@ export function ExplorerPanel(): ReactNode {
                       onRename={() => setRenamingChapter(row.chapter)}
                       onAddSub={(kind) => addSubChapter(row.chapter, kind)}
                       onMove={(offset) => moveChapter(row.chapter, offset)}
+                      onAnalyze={() => setAnalyzingChapter(row.chapter)}
                       onDelete={() => setDeletingChapter(row.chapter)}
                     />
                   )}
@@ -365,6 +373,16 @@ export function ExplorerPanel(): ReactNode {
       {importOpen && (
         <LazyOverlay>
           <BookImportDialog projectId={projectId} onClose={() => setImportOpen(false)} />
+        </LazyOverlay>
+      )}
+
+      {analyzingChapter !== null && (
+        <LazyOverlay>
+          <AnalyzeChapterDialog
+            projectId={projectId}
+            chapter={analyzingChapter.id}
+            onClose={() => setAnalyzingChapter(null)}
+          />
         </LazyOverlay>
       )}
 
@@ -452,6 +470,7 @@ function ChapterRow({
   onRename,
   onAddSub,
   onMove,
+  onAnalyze,
   onDelete,
 }: {
   chapter: ChapterNode;
@@ -462,6 +481,7 @@ function ChapterRow({
   onRename: () => void;
   onAddSub: (kind: 'extra' | 'interlude') => void;
   onMove: (offset: -1 | 1) => void;
+  onAnalyze: () => void;
   onDelete: () => void;
 }): ReactNode {
   // 受控打开：左键点 ⋯ 或右键点行都能拉起同一个菜单
@@ -529,6 +549,13 @@ function ChapterRow({
         </MenuItem>
         <MenuItem icon={<Pencil />} onSelect={onRename}>
           重命名
+        </MenuItem>
+        <MenuItem
+          icon={<ScanSearch />}
+          disabled={chapter.wordCount === 0}
+          onSelect={onAnalyze}
+        >
+          分析本章
         </MenuItem>
         {isNormal && (
           <>
