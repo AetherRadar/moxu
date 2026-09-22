@@ -4,9 +4,9 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BACKEND_PORT="${MOXU_BACKEND_PORT:-${WENSHAPE_BACKEND_PORT:-8080}}"
-FRONTEND_PORT="${MOXU_FRONTEND_PORT:-${WENSHAPE_FRONTEND_PORT:-3000}}"
-DATA_DIR="${MOXU_DATA_DIR:-${WENSHAPE_DATA_DIR:-$ROOT_DIR/data}}"
+BACKEND_PORT="${MOXU_BACKEND_PORT:-8080}"
+FRONTEND_PORT="${MOXU_FRONTEND_PORT:-3000}"
+DATA_DIR="${MOXU_DATA_DIR:-$ROOT_DIR/data}"
 BACKEND_PID=""
 FRONTEND_PID=""
 
@@ -82,7 +82,7 @@ mkdir -p "$DATA_DIR"
 (
     cd "$ROOT_DIR"
     exec "$JAVA_BIN" -jar "$RUN_DIR/backend/moxu-backend.jar" \
-        --server.address=127.0.0.1 "--server.port=$BACKEND_PORT" "--wenshape.data-dir=$DATA_DIR"
+        --server.address=127.0.0.1 "--server.port=$BACKEND_PORT" "--moxu.data-dir=$DATA_DIR"
 ) >"$RUN_DIR/backend.log" 2>&1 &
 BACKEND_PID=$!
 

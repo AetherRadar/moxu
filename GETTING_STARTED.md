@@ -82,9 +82,6 @@ $env:MOXU_FRONTEND_PORT = '3001'
 | `MOXU_FRONTEND_PORT` | `3000` |
 | `MOXU_DATA_DIR` | 仓库根目录下的 `data/`；相对路径也相对于仓库根目录 |
 | `JAVA_HOME` | 可选 JDK 路径，需与 Maven 的 JDK 一致 |
-| `WENSHAPE_BACKEND_PORT` | 未设置 `MOXU_BACKEND_PORT` 时的兼容回退 |
-| `WENSHAPE_FRONTEND_PORT` | 未设置 `MOXU_FRONTEND_PORT` 时的兼容回退 |
-| `WENSHAPE_DATA_DIR` | 未设置 `MOXU_DATA_DIR` 时的兼容回退，也可用于直接启动 Java |
 | `MOXU_POLISH_BASE_URL` | 本地 Ollama 地址，默认 `http://127.0.0.1:11434` |
 | `MOXU_POLISH_MODEL` | 默认本地润色模型 `moxu-polish:qwen3-1.7b` |
 | `MOXU_POLISH_TIMEOUT_SECONDS` | 本地润色请求超时，默认 `120` 秒 |
@@ -95,14 +92,14 @@ Vite 仍按自身规则加载 `web/.env*`。一键启动器显式设置前端端
 
 ## 4. 数据与模型
 
-启动脚本将数据目录转换为绝对路径，通过 `--wenshape.data-dir` 显式传给 Java；默认就是仓库根目录 `data/`，保留已有项目格式和内容。
+启动脚本将数据目录转换为绝对路径，通过 `--moxu.data-dir` 显式传给 Java；默认就是仓库根目录 `data/`，保留已有项目格式和内容。
 
 请保留整个 `data/`，尤其是项目正文、卡片、设定、章节摘要、记忆包以及：
 
 - `data/llm_profiles.json`：模型 profiles，可能含密钥。
 - `data/agent_assignments.json`：智能体使用的 profile 分配。
 
-在应用的智能体配置中管理模型。现有 `application.yml` 中的 LLM 配置继续生效，不要将真实密钥复制到示例文件或文档。Java 包名 `com.wenshape` 与 `wenshape.*` 配置键保持兼容。
+在应用的智能体配置中管理模型。现有 `application.yml` 中的 LLM 配置继续生效，不要将真实密钥复制到示例文件或文档。
 
 默认末尾润色使用已成功导入 Ollama 的本地模型 `moxu-polish:qwen3-1.7b`，并启用数字保护。系统根据上下文对齐自动恢复原数字及单位；遇到数字遗漏、新增或对齐歧义时，保留原选区并返回警告。结果仍需在前端 diff 中确认后应用，不自动覆盖正文。通用 LLM 单次调用保留为手动可选备用，不会自动回退。
 
@@ -116,7 +113,7 @@ Vite 仍按自身规则加载 `web/.env*`。一键启动器显式设置前端端
 mvn -f backend-java/pom.xml package
 java -jar backend-java/target/moxu-backend.jar \
   --server.address=127.0.0.1 --server.port=8080 \
-  --wenshape.data-dir="$PWD/data"
+  --moxu.data-dir="$PWD/data"
 ```
 
 另一个终端启动前端：
@@ -129,7 +126,7 @@ VITE_BACKEND_WS_URL=ws://127.0.0.1:8080 \
 npm run dev -- --host 127.0.0.1 --port 3000 --strictPort
 ```
 
-IDE 入口为 `com.wenshape.WenShapeApplication`；工作目录设为仓库根目录，并显式配置数据绝对路径。不要用旧 Python 入口或 PyInstaller 打包。
+IDE 入口为 `com.moxu.MoxuApplication`；工作目录设为仓库根目录，并显式配置数据绝对路径。不要用旧 Python 入口或 PyInstaller 打包。
 
 生产部署执行 `npm --prefix web run build`，单独托管生成的 `web/dist/`，配置 SPA 路由回退，并把 `/api` 和 WebSocket `/ws` 转发到 Java。Java 支持 `/api` 前缀，代理可保留该前缀。当前 JAR 不包含前端静态页面，`vite preview` 也不等于完整的生产部署。
 

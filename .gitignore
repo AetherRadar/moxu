@@ -55,7 +55,6 @@ backend/static/
 # Java output and per-launch runtime (may contain local configuration)
 backend-java/target/
 .moxu-runtime/
-.wenshape-runtime/
 /work/
 
 # Internal reports / plans / logs (not for repo)

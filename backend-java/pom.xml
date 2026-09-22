@@ -11,14 +11,16 @@
         <relativePath/>
     </parent>
 
-    <groupId>com.wenshape</groupId>
+    <groupId>com.moxu</groupId>
     <artifactId>moxu-backend</artifactId>
     <version>1.0.0-SNAPSHOT</version>
     <name>MoXu Backend</name>
-    <description>AI Novel Writing System - Java Backend</description>
+    <description>MoXu 墨序 - long-form fiction workbench, Java backend</description>
 
     <properties>
         <java.version>21</java.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <moxu.build.directory>${project.basedir}/target</moxu.build.directory>
         <lombok.version>1.18.44</lombok.version>
     </properties>
@@ -107,6 +109,7 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.14.0</version>
                 <configuration>
+                    <encoding>${project.build.sourceEncoding}</encoding>
                     <annotationProcessorPaths>
                         <path>
                             <groupId>org.projectlombok</groupId>

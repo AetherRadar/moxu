@@ -35,13 +35,13 @@ The launcher builds Java, installs frontend dependencies if missing, checks `/he
 
 Open [MoXu](http://127.0.0.1:3000). [GET /health](http://127.0.0.1:8080/health) checks application readiness, not model connectivity. Swagger `/docs` is not provided.
 
-Launchers read exported environment variables and **do not automatically load a root `.env` file**. See [`.env.example`](.env.example). Override `MOXU_BACKEND_PORT`, `MOXU_FRONTEND_PORT`, or `MOXU_DATA_DIR` as needed. Their legacy `WENSHAPE_*` equivalents are fallback aliases. Relative data paths resolve against the repository root. Vite still reads its own `web/.env*`; the launchers explicitly set backend HTTP/WS URLs and ports to keep them aligned.
+Launchers read exported environment variables and **do not automatically load a root `.env` file**. See [`.env.example`](.env.example). Override `MOXU_BACKEND_PORT`, `MOXU_FRONTEND_PORT`, or `MOXU_DATA_DIR` as needed. Relative data paths resolve against the repository root. Vite still reads its own `web/.env*`; the launchers explicitly set backend HTTP/WS URLs and ports to keep them aligned.
 
 ## Data and compatibility
 
 Keep the entire `data/` directory, including `llm_profiles.json` and `agent_assignments.json`. Manage model profiles in-app under Settings → Profiles / Assignments. Data and local configuration may contain credentials and must not be committed.
 
-Java packages remain `com.wenshape`, and `wenshape.*` configuration keys remain compatible. The Maven artifactId is `moxu-backend`. Legacy Python configuration and PyInstaller packaging are outside the current runtime.
+Java packages are `com.moxu`, and configuration keys are `moxu.*`. The Maven artifactId is `moxu-backend`. Legacy Python configuration and PyInstaller packaging are outside the current runtime.
 
 ## Frontend
 

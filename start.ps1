@@ -69,9 +69,9 @@ try {
     $javaBin = (Get-Command java).Source
     if ($env:JAVA_HOME) { $javaBin = Join-Path $env:JAVA_HOME 'bin/java.exe' }
     if (-not (Test-Path $javaBin)) { throw 'JAVA_HOME does not contain bin/java.exe.' }
-    $backendPort = [int](Resolve-Setting @('MOXU_BACKEND_PORT', 'WENSHAPE_BACKEND_PORT') '8080')
-    $frontendPort = [int](Resolve-Setting @('MOXU_FRONTEND_PORT', 'WENSHAPE_FRONTEND_PORT') '3000')
-    $dataDir = Resolve-Setting @('MOXU_DATA_DIR', 'WENSHAPE_DATA_DIR') (Join-Path $rootDir 'data')
+    $backendPort = [int](Resolve-Setting @('MOXU_BACKEND_PORT') '8080')
+    $frontendPort = [int](Resolve-Setting @('MOXU_FRONTEND_PORT') '3000')
+    $dataDir = Resolve-Setting @('MOXU_DATA_DIR') (Join-Path $rootDir 'data')
     if (-not [System.IO.Path]::IsPathRooted($dataDir)) { $dataDir = Join-Path $rootDir $dataDir }
     $dataDir = [System.IO.Path]::GetFullPath($dataDir)
     Assert-FreePorts @($backendPort, $frontendPort)
@@ -91,7 +91,7 @@ try {
     Assert-FreePorts @($backendPort, $frontendPort)
     New-Item -ItemType Directory -Path $dataDir -Force | Out-Null
     $jarPath = Join-Path $runDir 'backend/moxu-backend.jar'
-    $backendArgs = @('-jar', ('"' + $jarPath + '"'), '--server.address=127.0.0.1', "--server.port=$backendPort", ('"--wenshape.data-dir=' + $dataDir + '"'))
+    $backendArgs = @('-jar', ('"' + $jarPath + '"'), '--server.address=127.0.0.1', "--server.port=$backendPort", ('"--moxu.data-dir=' + $dataDir + '"'))
     $backendProcess = Start-Process -FilePath $javaBin -ArgumentList $backendArgs -WorkingDirectory $rootDir -NoNewWindow -PassThru -RedirectStandardOutput (Join-Path $runDir 'backend.log') -RedirectStandardError (Join-Path $runDir 'backend-error.log')
     Wait-Ready $backendProcess "http://127.0.0.1:$backendPort/health" 'backend'
     foreach ($name in $frontendVariables) { $savedEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }

@@ -41,7 +41,7 @@ start.bat
 
 保留完整 `data/`，其中 `llm_profiles.json` 和 `agent_assignments.json` 由 Java 继续使用。模型接入在应用的「设置 → 模型档案/分工」中管理。数据与本地配置可能包含密钥，不要提交到 Git。
 
-Java 包名 `com.wenshape` 和 `wenshape.*` 配置键保留兼容；Maven artifactId 为 `moxu-backend`。旧 Python 配置、PyInstaller 打包和启动方式不属于当前运行链路。
+Java 包名 `com.moxu`，配置键 `moxu.*`；Maven artifactId 为 `moxu-backend`。旧 Python 配置、PyInstaller 打包和启动方式不属于当前运行链路。
 
 ## 前端
 
