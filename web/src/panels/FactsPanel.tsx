@@ -1,16 +1,7 @@
 import { lazy, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import {
-  ChevronDown,
-  ChevronRight,
-  Landmark,
-  Pencil,
-  Plus,
-  ScrollText,
-  Trash2,
-  Users,
-} from 'lucide-react';
+import { ChevronDown, ChevronRight, Landmark, Pencil, Plus, ScrollText, Trash2, Users } from 'lucide-react';
 import type { Fact, JsonRecord } from '@/api/types';
 import {
   Badge,
@@ -38,6 +29,9 @@ import { useChapterTree } from '@/features/chapters/queries';
 
 const FactEditDialog = lazy(() =>
   import('@/features/facts/FactEditDialog').then((m) => ({ default: m.FactEditDialog })),
+);
+const CharacterStateDialog = lazy(() =>
+  import('@/features/facts/CharacterStateDialog').then((m) => ({ default: m.CharacterStateDialog })),
 );
 
 type FactsTabKey = 'canon' | 'facts' | 'timeline' | 'states';
@@ -104,7 +98,7 @@ function CanonTab({ projectId }: { projectId: string }): ReactNode {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const volumes = useMemo<TreeVolume[]>(
-    () => ((tree.data?.volumes as TreeVolume[] | undefined) ?? []),
+    () => (tree.data?.volumes as TreeVolume[] | undefined) ?? [],
     [tree.data],
   );
 
@@ -115,10 +109,7 @@ function CanonTab({ projectId }: { projectId: string }): ReactNode {
       // 搜索时命中章节/事实才收进结果，卷头跟着命中项走
       const chapters = volume.chapters.filter((chapter) => {
         if (key === '') return true;
-        if (
-          chapter.title.toLowerCase().includes(key) ||
-          chapter.summary.toLowerCase().includes(key)
-        )
+        if (chapter.title.toLowerCase().includes(key) || chapter.summary.toLowerCase().includes(key))
           return true;
         return chapter.facts.some((fact) =>
           String(fact.statement ?? fact.title ?? fact.content ?? '')
@@ -218,12 +209,8 @@ function CanonTab({ projectId }: { projectId: string }): ReactNode {
                     <span className="tnum shrink-0 text-2xs text-ink-500">
                       {formatChapterLabel(row.chapter.id)}
                     </span>
-                    <span className="min-w-0 flex-1 truncate text-2xs text-ink-200">
-                      {row.chapter.title}
-                    </span>
-                    {row.chapter.facts.length > 0 && (
-                      <Badge tone="outline">{row.chapter.facts.length}</Badge>
-                    )}
+                    <span className="min-w-0 flex-1 truncate text-2xs text-ink-200">{row.chapter.title}</span>
+                    {row.chapter.facts.length > 0 && <Badge tone="outline">{row.chapter.facts.length}</Badge>}
                   </button>
                 )}
                 {row.kind === 'fact' && (
@@ -291,30 +278,19 @@ function FactsTabView({ projectId }: { projectId: string }): ReactNode {
         >
           <div className="flex items-start gap-2">
             <div className="min-w-0 flex-1">
-              <p className="text-2xs leading-relaxed text-ink-200">
-                {fact.statement ?? fact.content}
-              </p>
+              <p className="text-2xs leading-relaxed text-ink-200">{fact.statement ?? fact.content}</p>
               <div className="mt-1 flex flex-wrap items-center gap-1.5 text-2xs text-ink-600">
                 <span className="tnum">{fact.id}</span>
-                {fact.introduced_in !== null && (
-                  <span>{formatChapterLabel(fact.introduced_in)}引入</span>
-                )}
+                {fact.introduced_in !== null && <span>{formatChapterLabel(fact.introduced_in)}引入</span>}
                 {fact.confidence < 1 && <Badge tone="warning">置信 {fact.confidence}</Badge>}
-                {fact.origin !== null && fact.origin !== '' && (
-                  <Badge tone="outline">{fact.origin}</Badge>
-                )}
+                {fact.origin !== null && fact.origin !== '' && <Badge tone="outline">{fact.origin}</Badge>}
               </div>
             </div>
             <div className="flex shrink-0 opacity-0 transition-opacity group-hover:opacity-100">
               <Button tone="ghost" size="xs" icon={<Pencil />} onClick={() => setEditing(fact)}>
                 改
               </Button>
-              <Button
-                tone="dangerGhost"
-                size="xs"
-                icon={<Trash2 />}
-                onClick={() => setDeleting(fact)}
-              >
+              <Button tone="dangerGhost" size="xs" icon={<Trash2 />} onClick={() => setDeleting(fact)}>
                 删
               </Button>
             </div>
@@ -395,9 +371,7 @@ function TimelineTab({ projectId }: { projectId: string }): ReactNode {
           <div className="flex items-center gap-2">
             <Select
               value={form.source || '__none'}
-              onValueChange={(value) =>
-                setForm((f) => ({ ...f, source: value === '__none' ? '' : value }))
-              }
+              onValueChange={(value) => setForm((f) => ({ ...f, source: value === '__none' ? '' : value }))}
               options={[
                 { value: '__none', label: '（无章节关联）' },
                 ...tree.chapterIds.map((id) => ({ value: id, label: formatChapterLabel(id) })),
@@ -461,6 +435,7 @@ function TimelineTab({ projectId }: { projectId: string }): ReactNode {
 function StatesTab({ projectId }: { projectId: string }): ReactNode {
   const states = useCharacterStates(projectId);
   const [search, setSearch] = useState('');
+  const [editing, setEditing] = useState<JsonRecord | null>(null);
 
   const entries = useMemo(() => {
     const list = states.data ?? [];
@@ -468,6 +443,16 @@ function StatesTab({ projectId }: { projectId: string }): ReactNode {
     if (key === '') return list;
     return list.filter((item) => JSON.stringify(item).toLowerCase().includes(key));
   }, [states.data, search]);
+
+  // 状态是 append-only 历史：编辑入口永远落在该人物最新一条上
+  const latestByName = useMemo(() => {
+    const map = new Map<string, JsonRecord>();
+    for (const item of states.data ?? []) {
+      const name = String(item.character ?? item.name ?? '');
+      if (name !== '') map.set(name, item);
+    }
+    return map;
+  }, [states.data]);
 
   if (states.isPending) return <SkeletonList rows={6} />;
 
@@ -488,11 +473,18 @@ function StatesTab({ projectId }: { projectId: string }): ReactNode {
             String(value) !== '',
         );
         return (
-          <section
-            key={`${name}-${index}`}
-            className="rounded-md border border-ink-800 px-2.5 py-2"
-          >
-            <p className="text-xs font-medium text-ink-200">{name}</p>
+          <section key={`${name}-${index}`} className="rounded-md border border-ink-800 px-2.5 py-2">
+            <div className="flex items-center gap-2">
+              <p className="min-w-0 flex-1 text-xs font-medium text-ink-200">{name}</p>
+              <Button
+                tone="ghost"
+                size="xs"
+                icon={<Pencil />}
+                onClick={() => setEditing(latestByName.get(name) ?? entry)}
+              >
+                编辑
+              </Button>
+            </div>
             <dl className="mt-1 flex flex-col gap-0.5">
               {fields.slice(0, 6).map(([key, value]) => (
                 <div key={key} className="flex gap-2 text-2xs">
@@ -506,6 +498,11 @@ function StatesTab({ projectId }: { projectId: string }): ReactNode {
       })}
       {entries.length === 0 && (
         <EmptyState title="还没有人物状态" description="写完章节并完成分析后自动产生。" />
+      )}
+      {editing !== null && (
+        <LazyOverlay>
+          <CharacterStateDialog projectId={projectId} entry={editing} onClose={() => setEditing(null)} />
+        </LazyOverlay>
       )}
     </div>
   );
