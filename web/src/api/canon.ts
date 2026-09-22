@@ -12,12 +12,6 @@ const base = (projectId: string): string => `/projects/${seg(projectId)}/canon`;
 export const canonApi = {
   facts: (projectId: string) => http.get<Fact[]>(`${base(projectId)}/facts`),
 
-  factsByChapter: (projectId: string, chapter: string) =>
-    http.get<Fact[]>(`${base(projectId)}/facts`, { query: { chapter } }),
-
-  fact: (projectId: string, factId: string) =>
-    http.get<Fact>(`${base(projectId)}/facts/by-id/${seg(factId)}`),
-
   createFact: (projectId: string, body: Partial<Fact>) =>
     http.post<Fact>(`${base(projectId)}/facts`, { body }),
 

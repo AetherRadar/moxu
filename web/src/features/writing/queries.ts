@@ -1,12 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { toast } from 'sonner';
-import { draftsApi, qk, type DraftSaveRequest, type UpdateContentRequest } from '@/api';
-import type { Draft } from '@/api/types';
+import { draftsApi, qk, type UpdateContentRequest } from '@/api';
 import { ApiError } from '@/lib/http';
-
-function reason(error: unknown, fallback: string): string {
-  return error instanceof ApiError ? error.message : fallback;
-}
 
 /**
  * 当前工作草稿（current.yaml）。
@@ -18,20 +12,6 @@ export function useDraft(projectId: string, chapter: string | null) {
     queryFn: () => draftsApi.latest(projectId, chapter ?? ''),
     enabled: chapter !== null && chapter !== '',
     retry: (count, error) => !(error instanceof ApiError && error.status === 404) && count < 2,
-  });
-}
-
-/** 手动保存（Ctrl+S）：全量落盘 + 后端重建 review/memory pack。 */
-export function useSaveDraft(projectId: string, chapter: string) {
-  const client = useQueryClient();
-  return useMutation({
-    mutationFn: (body: DraftSaveRequest) => draftsApi.save(projectId, chapter, body),
-    onSuccess: (draft: Draft) => {
-      client.setQueryData(qk.draft(projectId, chapter), draft);
-      void client.invalidateQueries({ queryKey: qk.chapterSummaries(projectId) });
-      toast.success('已保存');
-    },
-    onError: (error) => toast.error(reason(error, '保存失败')),
   });
 }
 

@@ -1,5 +1,5 @@
 import { http, seg, Timeout } from '@/lib/http';
-import type { JsonRecord, Volume, VolumeCreateRequest, VolumeSummary } from './types';
+import type { Volume, VolumeCreateRequest, VolumeSummary } from './types';
 
 const base = (projectId: string): string => `/projects/${seg(projectId)}/volumes`;
 
@@ -22,7 +22,4 @@ export const volumesApi = {
 
   saveSummary: (projectId: string, volumeId: string, body: VolumeSummary) =>
     http.put<VolumeSummary>(`${base(projectId)}/${seg(volumeId)}/summary`, { body }),
-
-  stats: (projectId: string, volumeId: string) =>
-    http.get<JsonRecord>(`${base(projectId)}/${seg(volumeId)}/stats`),
 };

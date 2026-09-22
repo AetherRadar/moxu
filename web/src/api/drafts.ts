@@ -4,7 +4,6 @@ import type {
   DeAiRewriteConfig,
   Draft,
   JsonRecord,
-  ReviewResult,
   SceneBrief,
 } from './types';
 
@@ -57,9 +56,6 @@ export const draftsApi = {
 
   final: (projectId: string, chapter: string) =>
     http.get<JsonRecord>(`${base(projectId)}/${seg(chapter)}/final`),
-
-  review: (projectId: string, chapter: string) =>
-    http.get<ReviewResult>(`${base(projectId)}/${seg(chapter)}/review`),
 
   // 后端保存后会串行重建绑定、review 和记忆包，所以给长超时
   save: (projectId: string, chapter: string, body: DraftSaveRequest) =>
