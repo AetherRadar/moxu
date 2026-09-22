@@ -2,7 +2,7 @@ import { lazy, useCallback, useEffect, useRef, useState, type ReactNode } from '
 import { useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { History, FileText, PenLine, Save, Sparkles, Wand2 } from 'lucide-react';
+import { Eraser, History, FileText, PenLine, Save, Sparkles, Wand2 } from 'lucide-react';
 import { draftsApi, qk } from '@/api';
 import { ApiError } from '@/lib/http';
 import { formatChapterLabel, formatVolumeLabel } from '@/lib/chapter-id';
@@ -29,6 +29,9 @@ const VersionsDialog = lazy(() =>
 );
 const SceneBriefDialog = lazy(() =>
   import('@/features/writing/SceneBriefDialog').then((m) => ({ default: m.SceneBriefDialog })),
+);
+const RewriteDialog = lazy(() =>
+  import('@/features/writing/RewriteDialog').then((m) => ({ default: m.RewriteDialog })),
 );
 
 const AUTOSAVE_DELAY = 1600;
@@ -81,7 +84,7 @@ function ChapterEditor({ projectId, chapter }: { projectId: string; chapter: str
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [selection, setSelection] = useState<EditorSelection>({ from: 0, to: 0, text: '' });
-  const [dialog, setDialog] = useState<'session' | 'suggest' | 'versions' | 'brief' | null>(null);
+  const [dialog, setDialog] = useState<'session' | 'suggest' | 'versions' | 'brief' | 'rewrite' | null>(null);
 
   titleRef.current = title;
 
@@ -272,6 +275,9 @@ function ChapterEditor({ projectId, chapter }: { projectId: string; chapter: str
           <Button tone="ghost" size="sm" icon={<Wand2 />} onClick={() => setDialog('suggest')}>
             修订
           </Button>
+          <Button tone="ghost" size="sm" icon={<Eraser />} onClick={() => setDialog('rewrite')}>
+            润色
+          </Button>
           <Button tone="primary" size="sm" icon={<Sparkles />} onClick={() => setDialog('session')}>
             AI 写章
           </Button>
@@ -338,6 +344,17 @@ function ChapterEditor({ projectId, chapter }: { projectId: string; chapter: str
       {dialog === 'brief' && (
         <LazyOverlay>
           <SceneBriefDialog projectId={projectId} chapter={chapter} onClose={() => setDialog(null)} />
+        </LazyOverlay>
+      )}
+      {dialog === 'rewrite' && (
+        <LazyOverlay>
+          <RewriteDialog
+            projectId={projectId}
+            getDoc={() => editorRef.current?.getDoc() ?? ''}
+            selection={selection.from === selection.to ? null : selection}
+            onApply={applyText}
+            onClose={() => setDialog(null)}
+          />
         </LazyOverlay>
       )}
     </div>

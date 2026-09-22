@@ -6,8 +6,6 @@ const base = (projectId: string): string => `/projects/${seg(projectId)}/volumes
 export const volumesApi = {
   list: (projectId: string) => http.get<Volume[]>(base(projectId)),
 
-  get: (projectId: string, volumeId: string) => http.get<Volume>(`${base(projectId)}/${seg(volumeId)}`),
-
   create: (projectId: string, body: VolumeCreateRequest) => http.post<Volume>(base(projectId), { body }),
 
   update: (projectId: string, volumeId: string, body: VolumeCreateRequest) =>

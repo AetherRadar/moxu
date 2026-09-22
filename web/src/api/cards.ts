@@ -11,12 +11,7 @@ const base = (projectId: string): string => `/projects/${seg(projectId)}/cards`;
  * 路径匹配吃掉，所以这里统一只用查询参数版，避免一类难查的 404。
  */
 export const cardsApi = {
-  characterNames: (projectId: string) => http.get<string[]>(`${base(projectId)}/characters`),
-
   characters: (projectId: string) => http.get<CharacterCard[]>(`${base(projectId)}/characters/index`),
-
-  character: (projectId: string, name: string) =>
-    http.get<CharacterCard>(`${base(projectId)}/characters/by-name`, { query: { name } }),
 
   createCharacter: (projectId: string, body: CharacterCard) =>
     http.post<JsonRecord>(`${base(projectId)}/characters`, { body }),
@@ -27,12 +22,7 @@ export const cardsApi = {
   deleteCharacter: (projectId: string, name: string) =>
     http.delete<JsonRecord>(`${base(projectId)}/characters/by-name`, { query: { name } }),
 
-  worldNames: (projectId: string) => http.get<string[]>(`${base(projectId)}/world`),
-
   world: (projectId: string) => http.get<WorldCard[]>(`${base(projectId)}/world/index`),
-
-  worldCard: (projectId: string, name: string) =>
-    http.get<WorldCard>(`${base(projectId)}/world/by-name`, { query: { name } }),
 
   createWorldCard: (projectId: string, body: WorldCard) =>
     http.post<JsonRecord>(`${base(projectId)}/world`, { body }),

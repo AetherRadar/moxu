@@ -37,9 +37,6 @@ export const canonApi = {
 
   characterStates: (projectId: string) => http.get<CharacterState[]>(`${base(projectId)}/character-state`),
 
-  characterState: (projectId: string, name: string) =>
-    http.get<CharacterState>(`${base(projectId)}/character-state/${seg(name)}`),
-
   saveCharacterState: (projectId: string, name: string, body: CharacterState) =>
     http.put<JsonRecord>(`${base(projectId)}/character-state/${seg(name)}`, { body }),
 };
