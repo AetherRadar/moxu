@@ -71,6 +71,11 @@ const AnalyzeChapterDialog = lazy(() =>
     default: m.AnalyzeChapterDialog,
   })),
 );
+const BatchAnalyzeDialog = lazy(() =>
+  import('@/features/analysis/BatchAnalyzeDialog').then((m) => ({
+    default: m.BatchAnalyzeDialog,
+  })),
+);
 
 const ROW_HEIGHT = 26;
 
@@ -93,6 +98,10 @@ export function ExplorerPanel(): ReactNode {
   const [deletingVolume, setDeletingVolume] = useState<VolumeNode | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [analyzingChapter, setAnalyzingChapter] = useState<ChapterNode | null>(null);
+  const [batchScope, setBatchScope] = useState<{
+    label: string;
+    chapters: { id: string; title: string }[];
+  } | null>(null);
 
   const tree = useChapterTree(projectId);
   const chapter = useWorkspaceStore((state) => state.chapter);
@@ -186,6 +195,13 @@ export function ExplorerPanel(): ReactNode {
 
   const totalChapters = tree.volumes.reduce((sum, volume) => sum + volume.chapters.length, 0);
 
+  /** 批量分析只收有正文的章：空章后端只会逐章报错。 */
+  const withContent = (chapters: ChapterNode[]): { id: string; title: string }[] =>
+    chapters
+      .filter((chapter) => chapter.wordCount > 0)
+      .map((chapter) => ({ id: chapter.id, title: chapter.title }));
+  const allWithContent = withContent(tree.volumes.flatMap((volume) => volume.chapters));
+
   return (
     <Panel
       title="章节"
@@ -218,6 +234,23 @@ export function ExplorerPanel(): ReactNode {
               <Upload />
             </IconButton>
           </Tooltip>
+          <Menu>
+            <MenuTrigger asChild>
+              <IconButton label="项目批量操作">
+                <Ellipsis />
+              </IconButton>
+            </MenuTrigger>
+            <MenuContent align="end">
+              <MenuLabel>全书批量操作</MenuLabel>
+              <MenuItem
+                icon={<ScanSearch />}
+                disabled={allWithContent.length === 0}
+                onSelect={() => setBatchScope({ label: '全书', chapters: allWithContent })}
+              >
+                批量分析全书
+              </MenuItem>
+            </MenuContent>
+          </Menu>
           <Tooltip content="刷新">
             <IconButton label="刷新" onClick={tree.refetch}>
               <RefreshCw />
@@ -227,8 +260,8 @@ export function ExplorerPanel(): ReactNode {
       }
       footer={
         <span className="flex items-center gap-2 px-1 text-2xs text-ink-500">
-          <span className="tnum">{tree.volumes.length}</span> 卷
-          <span className="tnum">{totalChapters}</span> 章
+          <span className="tnum">{tree.volumes.length}</span> 卷<span className="tnum">{totalChapters}</span>{' '}
+          章
         </span>
       }
     >
@@ -252,9 +285,7 @@ export function ExplorerPanel(): ReactNode {
 
       {tree.isPending && <SkeletonList rows={10} />}
 
-      {!tree.isPending && tree.isError && (
-        <EmptyState title="读不到章节" description="确认后端已启动。" />
-      )}
+      {!tree.isPending && tree.isError && <EmptyState title="读不到章节" description="确认后端已启动。" />}
 
       {!tree.isPending && !tree.isError && rows.length === 0 && (
         <EmptyState
@@ -296,6 +327,12 @@ export function ExplorerPanel(): ReactNode {
                       onToggle={() => toggleVolume(row.volume.id)}
                       onAddChapter={() => addChapter(row.volume.id)}
                       onRename={() => setRenamingVolume(row.volume)}
+                      onAnalyzeVolume={() =>
+                        setBatchScope({
+                          label: formatVolumeLabel(row.volume.id, row.volume.title),
+                          chapters: withContent(row.volume.chapters),
+                        })
+                      }
                       onDelete={() => setDeletingVolume(row.volume)}
                     />
                   ) : (
@@ -308,9 +345,7 @@ export function ExplorerPanel(): ReactNode {
                           .find((item) => item.id === row.volume.id)
                           ?.chapters.indexOf(row.chapter) ?? -1
                       }
-                      count={
-                        tree.volumes.find((item) => item.id === row.volume.id)?.chapters.length ?? 0
-                      }
+                      count={tree.volumes.find((item) => item.id === row.volume.id)?.chapters.length ?? 0}
                       onOpen={() => openChapter(row.chapter.id)}
                       onRename={() => setRenamingChapter(row.chapter)}
                       onAddSub={(kind) => addSubChapter(row.chapter, kind)}
@@ -386,6 +421,17 @@ export function ExplorerPanel(): ReactNode {
         </LazyOverlay>
       )}
 
+      {batchScope !== null && (
+        <LazyOverlay>
+          <BatchAnalyzeDialog
+            projectId={projectId}
+            chapters={batchScope.chapters}
+            scopeLabel={batchScope.label}
+            onClose={() => setBatchScope(null)}
+          />
+        </LazyOverlay>
+      )}
+
       {deletingVolume !== null && (
         <LazyOverlay>
           <ConfirmDialog
@@ -414,50 +460,86 @@ function VolumeRow({
   onToggle,
   onAddChapter,
   onRename,
+  onAnalyzeVolume,
   onDelete,
 }: {
   row: Extract<TreeRow, { kind: 'volume' }>;
   onToggle: () => void;
   onAddChapter: () => void;
   onRename: () => void;
+  onAnalyzeVolume: () => void;
   onDelete: () => void;
 }): ReactNode {
   const { volume, expanded } = row;
+  // 与章节行一致：右键或 ⋯ 拉起同一个菜单
+  const [menuOpen, setMenuOpen] = useState(false);
+  const analyzable = volume.chapters.filter((chapter) => chapter.wordCount > 0).length;
   return (
-    <div className="group flex h-[26px] items-center gap-1 pr-1 pl-1.5">
-      <button
-        type="button"
-        onClick={onToggle}
-        aria-expanded={expanded}
-        className="flex min-w-0 flex-1 items-center gap-1 text-left"
+    <Menu open={menuOpen} onOpenChange={setMenuOpen}>
+      <div
+        onContextMenu={(event) => {
+          event.preventDefault();
+          setMenuOpen(true);
+        }}
+        className="group flex h-[26px] items-center gap-1 pr-1 pl-1.5"
       >
-        <span className="text-ink-500 [&_svg]:size-3.5">
-          {expanded ? <ChevronDown /> : <ChevronRight />}
-        </span>
-        <span className="truncate text-xs font-medium text-ink-200">
-          {formatVolumeLabel(volume.id, volume.title)}
-        </span>
-        <span className="tnum shrink-0 text-2xs text-ink-600">{volume.chapters.length}</span>
-      </button>
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={expanded}
+          className="flex min-w-0 flex-1 items-center gap-1 text-left"
+        >
+          <span className="text-ink-500 [&_svg]:size-3.5">
+            {expanded ? <ChevronDown /> : <ChevronRight />}
+          </span>
+          <span className="truncate text-xs font-medium text-ink-200">
+            {formatVolumeLabel(volume.id, volume.title)}
+          </span>
+          <span className="tnum shrink-0 text-2xs text-ink-600">{volume.chapters.length}</span>
+        </button>
 
-      <div className="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-        <Tooltip content="在此卷新建章节" side="top">
-          <IconButton label="在此卷新建章节" size="xs" onClick={onAddChapter}>
-            <FilePlus2 />
-          </IconButton>
-        </Tooltip>
-        <Tooltip content="重命名分卷" side="top">
-          <IconButton label="重命名分卷" size="xs" onClick={onRename}>
-            <Pencil />
-          </IconButton>
-        </Tooltip>
-        <Tooltip content="删除分卷" side="top">
-          <IconButton label="删除分卷" size="xs" tone="danger" onClick={onDelete}>
-            <Trash2 />
-          </IconButton>
-        </Tooltip>
+        <div className="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+          <Tooltip content="在此卷新建章节" side="top">
+            <IconButton label="在此卷新建章节" size="xs" onClick={onAddChapter}>
+              <FilePlus2 />
+            </IconButton>
+          </Tooltip>
+          <Tooltip content="重命名分卷" side="top">
+            <IconButton label="重命名分卷" size="xs" onClick={onRename}>
+              <Pencil />
+            </IconButton>
+          </Tooltip>
+          <Tooltip content="删除分卷" side="top">
+            <IconButton label="删除分卷" size="xs" tone="danger" onClick={onDelete}>
+              <Trash2 />
+            </IconButton>
+          </Tooltip>
+          <MenuTrigger asChild>
+            <IconButton label="分卷操作" size="xs" className="data-[state=open]:opacity-100">
+              <Ellipsis />
+            </IconButton>
+          </MenuTrigger>
+        </div>
       </div>
-    </div>
+
+      <MenuContent align="start">
+        <MenuLabel>{formatVolumeLabel(volume.id, volume.title)}</MenuLabel>
+        <MenuItem icon={<FilePlus2 />} onSelect={onAddChapter}>
+          新建章节
+        </MenuItem>
+        <MenuItem icon={<Pencil />} onSelect={onRename}>
+          重命名
+        </MenuItem>
+        <MenuSeparator />
+        <MenuItem icon={<ScanSearch />} disabled={analyzable === 0} onSelect={onAnalyzeVolume}>
+          批量分析本卷（{analyzable} 章）
+        </MenuItem>
+        <MenuSeparator />
+        <MenuItem icon={<Trash2 />} danger onSelect={onDelete}>
+          删除分卷
+        </MenuItem>
+      </MenuContent>
+    </Menu>
   );
 }
 
@@ -500,11 +582,7 @@ function ChapterRow({
           selected ? 'bg-celadon-900/50' : 'hover:bg-ink-850',
         )}
       >
-        <button
-          type="button"
-          onClick={onOpen}
-          className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
-        >
+        <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 items-center gap-1.5 text-left">
           <span className={cn('tnum shrink-0 text-2xs', selected ? 'text-celadon-400' : 'text-ink-600')}>
             {formatChapterLabel(chapter.id)}
           </span>
@@ -524,10 +602,7 @@ function ChapterRow({
           )}
           {/* 没有摘要说明还没归档分析，用一个小点提示，不占文字空间 */}
           {!chapter.analyzed && (
-            <span
-              aria-label="尚未归档"
-              className="size-1 shrink-0 rounded-full bg-gamboge-500/70"
-            />
+            <span aria-label="尚未归档" className="size-1 shrink-0 rounded-full bg-gamboge-500/70" />
           )}
         </button>
 
@@ -550,11 +625,7 @@ function ChapterRow({
         <MenuItem icon={<Pencil />} onSelect={onRename}>
           重命名
         </MenuItem>
-        <MenuItem
-          icon={<ScanSearch />}
-          disabled={chapter.wordCount === 0}
-          onSelect={onAnalyze}
-        >
+        <MenuItem icon={<ScanSearch />} disabled={chapter.wordCount === 0} onSelect={onAnalyze}>
           分析本章
         </MenuItem>
         {isNormal && (
