@@ -4,7 +4,7 @@ import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { RefreshCw, Search } from 'lucide-react';
 import { retrievalApi, type EvidenceSearchResponse } from '@/api';
-import type { EvidenceItem } from '@/api/types';
+import type { EvidenceItem, JsonRecord } from '@/api/types';
 import { ApiError } from '@/lib/http';
 import { formatChapterLabel } from '@/lib/chapter-id';
 import { Badge, Button, EmptyState, Input, Panel } from '@/components/ui';
@@ -19,7 +19,10 @@ const TYPE_OPTIONS = [
   { value: 'memory', label: '记忆' },
 ] as const;
 
-const TYPE_BADGE: Record<string, { label: string; tone: 'accent' | 'success' | 'warning' | 'danger' | 'neutral' }> = {
+const TYPE_BADGE: Record<
+  string,
+  { label: string; tone: 'accent' | 'success' | 'warning' | 'danger' | 'neutral' }
+> = {
   character: { label: '人物', tone: 'accent' },
   world: { label: '世界', tone: 'success' },
   world_entity: { label: '世界', tone: 'success' },
@@ -38,6 +41,7 @@ function reason(error: unknown, fallback: string): string {
 /** 证据检索：作家循环用的同一套后端检索，拿来当调试和资料浏览口。 */
 export function SearchPanel(): ReactNode {
   const { projectId = '' } = useParams<{ projectId: string }>();
+  const [mode, setMode] = useState<'evidence' | 'chunks'>('evidence');
   const [query, setQuery] = useState('');
   const [types, setTypes] = useState<Set<string>>(
     new Set(['character', 'world_entity', 'fact', 'summary', 'text_chunk']),
@@ -46,19 +50,22 @@ export function SearchPanel(): ReactNode {
 
   const search = useMutation({
     mutationFn: (text: string) =>
-      retrievalApi.searchEvidence(projectId, {
-        queries: [text],
-        types: [...types],
-        limit: 16,
-        semantic_rerank: rerank,
-        rerank_query: rerank ? text : undefined,
-      }),
+      mode === 'chunks'
+        ? retrievalApi.searchChunks(projectId, { query: text, limit: 12 })
+        : retrievalApi.searchEvidence(projectId, {
+            queries: [text],
+            types: [...types],
+            limit: 16,
+            semantic_rerank: rerank,
+            rerank_query: rerank ? text : undefined,
+          }),
     onError: (error) => toast.error(reason(error, '检索失败')),
   });
 
   const rebuild = useMutation({
-    mutationFn: () => retrievalApi.rebuildEvidence(projectId),
-    onSuccess: () => toast.success('索引已重建'),
+    mutationFn: () =>
+      mode === 'chunks' ? retrievalApi.rebuildChunks(projectId) : retrievalApi.rebuildEvidence(projectId),
+    onSuccess: () => toast.success(mode === 'chunks' ? '分块索引已重建' : '索引已重建'),
     onError: (error) => toast.error(reason(error, '重建索引失败')),
   });
 
@@ -70,11 +77,22 @@ export function SearchPanel(): ReactNode {
   };
 
   const items = useMemo<EvidenceItem[]>(() => {
+    if (mode === 'chunks') {
+      const results = (search.data as JsonRecord | undefined)?.results;
+      if (!Array.isArray(results)) return [];
+      return (results as JsonRecord[]).slice(0, 60).map((item) => ({
+        ...item,
+        type: 'text_chunk',
+      }));
+    }
     const data: EvidenceSearchResponse | undefined = search.data;
     return (data?.items ?? data?.results ?? []).slice(0, 60);
-  }, [search.data]);
+  }, [mode, search.data]);
 
-  const stats = search.data?.stats as Record<string, unknown> | undefined;
+  const stats =
+    mode === 'chunks'
+      ? undefined
+      : ((search.data as EvidenceSearchResponse | undefined)?.stats as Record<string, unknown> | undefined);
 
   const toggleType = (value: string): void => {
     setTypes((current) => {
@@ -96,10 +114,35 @@ export function SearchPanel(): ReactNode {
           loading={rebuild.isPending}
           onClick={() => rebuild.mutate()}
         >
-          重建索引
+          重建{mode === 'chunks' ? '分块' : '索引'}
         </Button>
       }
     >
+      <div className="mb-2 flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => setMode('evidence')}
+          className={
+            mode === 'evidence'
+              ? 'rounded border border-celadon-600/60 bg-celadon-500/10 px-1.5 py-0.5 text-2xs text-celadon-300'
+              : 'rounded border border-ink-800 px-1.5 py-0.5 text-2xs text-ink-500 hover:border-ink-600'
+          }
+        >
+          证据检索
+        </button>
+        <button
+          type="button"
+          onClick={() => setMode('chunks')}
+          className={
+            mode === 'chunks'
+              ? 'rounded border border-celadon-600/60 bg-celadon-500/10 px-1.5 py-0.5 text-2xs text-celadon-300'
+              : 'rounded border border-ink-800 px-1.5 py-0.5 text-2xs text-ink-500 hover:border-ink-600'
+          }
+        >
+          正文分块
+        </button>
+      </div>
+
       <form onSubmit={submit} className="mb-2 flex items-center gap-1.5">
         <Input
           value={query}
@@ -113,20 +156,21 @@ export function SearchPanel(): ReactNode {
       </form>
 
       <div className="mb-2 flex flex-wrap items-center gap-1">
-        {TYPE_OPTIONS.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            onClick={() => toggleType(option.value)}
-            className={
-              types.has(option.value)
-                ? 'rounded border border-celadon-600/60 bg-celadon-500/10 px-1.5 py-0.5 text-2xs text-celadon-300'
-                : 'rounded border border-ink-800 px-1.5 py-0.5 text-2xs text-ink-500 hover:border-ink-600'
-            }
-          >
-            {option.label}
-          </button>
-        ))}
+        {mode === 'evidence' &&
+          TYPE_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => toggleType(option.value)}
+              className={
+                types.has(option.value)
+                  ? 'rounded border border-celadon-600/60 bg-celadon-500/10 px-1.5 py-0.5 text-2xs text-celadon-300'
+                  : 'rounded border border-ink-800 px-1.5 py-0.5 text-2xs text-ink-500 hover:border-ink-600'
+              }
+            >
+              {option.label}
+            </button>
+          ))}
         <label className="ml-auto flex cursor-pointer items-center gap-1 text-2xs text-ink-500">
           <input
             type="checkbox"
@@ -184,12 +228,8 @@ function EvidenceCard({ item }: { item: EvidenceItem }): ReactNode {
     <section className="rounded-md border border-ink-800 px-2.5 py-2">
       <div className="mb-1 flex items-center gap-1.5">
         <Badge tone={badge.tone}>{badge.label}</Badge>
-        {chapter !== '' && (
-          <span className="tnum text-2xs text-ink-500">{formatChapterLabel(chapter)}</span>
-        )}
-        {score !== null && (
-          <span className="tnum ml-auto text-2xs text-ink-600">{score.toFixed(2)}</span>
-        )}
+        {chapter !== '' && <span className="tnum text-2xs text-ink-500">{formatChapterLabel(chapter)}</span>}
+        {score !== null && <span className="tnum ml-auto text-2xs text-ink-600">{score.toFixed(2)}</span>}
       </div>
       <p className="line-clamp-4 text-2xs leading-relaxed text-ink-300">{text}</p>
     </section>
