@@ -1,0 +1,46 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: moxu-backend
+
+# 兼容现有数据和 wenshape 配置键；启动脚本显式传入根目录 data 的绝对路径。
+# IDE 手动启动时以仓库根目录为工作目录，或设置 WENSHAPE_DATA_DIR。
+wenshape:
+  data-dir: ${WENSHAPE_DATA_DIR:data}
+  rate-limit:
+    enabled: true
+    requests-per-minute: 200
+  bindings:
+    thresholds:
+      bm25: 0.95
+      bm25-generic: 1.35
+      rule: 1.0
+      alias-short-specific-penalty: 0.18
+      alias-short-generic-penalty: 0.25
+      alias-medium-specific-penalty: 0.08
+      alias-medium-generic-penalty: 0.15
+      alias-long-relief: 0.08
+      alias-generic-single-term-penalty: 0.12
+      alias-rich-term-relief: 0.05
+      rule-short-penalty: 0.30
+      rule-medium-penalty: 0.15
+      rule-long-relief: 0.08
+      rule-few-terms-penalty: 0.12
+      rule-hint-relief: 0.08
+  
+# 单次末尾润色；默认本地模型，Java 后处理负责数字保护。
+moxu:
+  polish:
+    base-url: ${MOXU_POLISH_BASE_URL:http://127.0.0.1:11434}
+    model: ${MOXU_POLISH_MODEL:deai-polish:qwen3-8b}
+    fallback-model: ${MOXU_POLISH_FALLBACK_MODEL:moxu-polish:qwen3-1.7b}
+    cascade: ${MOXU_POLISH_CASCADE:true}
+    timeout-seconds: ${MOXU_POLISH_TIMEOUT_SECONDS:120}
+
+# LLM 配置
+# 日志配置
+logging:
+  level:
+    com.wenshape: DEBUG

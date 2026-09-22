@@ -1,0 +1,400 @@
+{
+  "project_id" : "缺席者",
+  "chapter" : "V1C1",
+  "built_at" : "2026-09-21T13:11:15.851978Z",
+  "source" : "draft_save",
+  "payload" : {
+    "chapterGoal" : "",
+    "working_memory" : "本章目标: 未提供\n硬约束:\n- 无\n可用素材:\n- 无\n未解决缺口:\n- 本章涉及的主要角色有哪些\n- 本章时间/地点的具体边界是什么\n- 本章需遵守的世界规则/禁忌/代价有哪些",
+    "evidence_pack" : {
+      "items" : [ ],
+      "groups" : [ {
+        "gap" : {
+          "kind" : "detail_gap",
+          "text" : "本章涉及的主要角色有哪些",
+          "queries" : [ "角色 人物 参与" ],
+          "ask_user" : true,
+          "key" : "V1C1:detail_gap:本章涉及的主要角色有哪些"
+        },
+        "queries" : [ "角色 人物 参与" ],
+        "items" : [ ],
+        "stats" : {
+          "total" : 0,
+          "types" : { },
+          "queries" : [ "角色 人物 参与" ],
+          "hits" : 0,
+          "top_sources" : [ ],
+          "semantic_rerank" : false,
+          "rerank_query" : "",
+          "rerank_top_k" : 0,
+          "limit" : 10,
+          "types_requested" : [ "fact", "summary", "character", "world_rule", "world_entity", "text_chunk", "memory" ],
+          "round" : 1,
+          "note" : ""
+        }
+      }, {
+        "gap" : {
+          "kind" : "detail_gap",
+          "text" : "本章时间/地点的具体边界是什么",
+          "queries" : [ "时间 地点 场景" ],
+          "ask_user" : true,
+          "key" : "V1C1:detail_gap:本章时间/地点的具体边界是什么"
+        },
+        "queries" : [ "时间 地点 场景" ],
+        "items" : [ ],
+        "stats" : {
+          "total" : 0,
+          "types" : { },
+          "queries" : [ "时间 地点 场景" ],
+          "hits" : 0,
+          "top_sources" : [ ],
+          "semantic_rerank" : false,
+          "rerank_query" : "",
+          "rerank_top_k" : 0,
+          "limit" : 10,
+          "types_requested" : [ "fact", "summary", "character", "world_rule", "world_entity", "text_chunk", "memory" ],
+          "round" : 1,
+          "note" : ""
+        }
+      }, {
+        "gap" : {
+          "kind" : "plot_point",
+          "text" : "本章需遵守的世界规则/禁忌/代价有哪些",
+          "queries" : [ "规则 禁忌 代价 限制" ],
+          "ask_user" : true,
+          "key" : "V1C1:plot_point:本章需遵守的世界规则/禁忌/代价有哪些"
+        },
+        "queries" : [ "规则 禁忌 代价 限制" ],
+        "items" : [ ],
+        "stats" : {
+          "total" : 0,
+          "types" : { },
+          "queries" : [ "规则 禁忌 代价 限制" ],
+          "hits" : 0,
+          "top_sources" : [ ],
+          "semantic_rerank" : false,
+          "rerank_query" : "",
+          "rerank_top_k" : 0,
+          "limit" : 10,
+          "types_requested" : [ "fact", "summary", "character", "world_rule", "world_entity", "text_chunk", "memory" ],
+          "round" : 1,
+          "note" : ""
+        }
+      }, {
+        "gap" : {
+          "kind" : "detail_gap",
+          "text" : "与本章目标直接相关的已确立事实有哪些",
+          "queries" : [ "关键事实 已确立事实" ],
+          "ask_user" : true,
+          "key" : "V1C1:detail_gap:与本章目标直接相关的已确立事实有哪些"
+        },
+        "queries" : [ "关键事实 已确立事实" ],
+        "items" : [ ],
+        "stats" : {
+          "total" : 0,
+          "types" : { },
+          "queries" : [ "关键事实 已确立事实" ],
+          "hits" : 0,
+          "top_sources" : [ ],
+          "semantic_rerank" : false,
+          "rerank_query" : "",
+          "rerank_top_k" : 0,
+          "limit" : 10,
+          "types_requested" : [ "fact", "summary", "character", "world_rule", "world_entity", "text_chunk", "memory" ],
+          "round" : 1,
+          "note" : ""
+        }
+      }, {
+        "gap" : {
+          "kind" : "extra_research",
+          "text" : "研究补充查询",
+          "queries" : [ "本章涉及的主要角色有哪些", "本章时间/地点的具体边界是什么", "本章需遵守的世界规则/禁忌/代价有哪些", "与本章目标直接相关的已确立事实有哪些" ],
+          "ask_user" : false,
+          "key" : "V1C1:extra_research:研究补充查询"
+        },
+        "queries" : [ "本章涉及的主要角色有哪些", "本章时间/地点的具体边界是什么", "本章需遵守的世界规则/禁忌/代价有哪些", "与本章目标直接相关的已确立事实有哪些" ],
+        "items" : [ ],
+        "stats" : {
+          "total" : 0,
+          "types" : { },
+          "queries" : [ "本章涉及的主要角色有哪些", "本章时间/地点的具体边界是什么", "本章需遵守的世界规则/禁忌/代价有哪些", "与本章目标直接相关的已确立事实有哪些" ],
+          "hits" : 0,
+          "top_sources" : [ ],
+          "semantic_rerank" : false,
+          "rerank_query" : "",
+          "rerank_top_k" : 0,
+          "limit" : 10,
+          "types_requested" : [ "fact", "summary", "character", "world_rule", "world_entity", "text_chunk", "memory" ],
+          "round" : 1,
+          "note" : ""
+        }
+      } ],
+      "stats" : {
+        "total" : 0,
+        "types" : { },
+        "queries" : [ "角色 人物 参与", "时间 地点 场景", "规则 禁忌 代价 限制", "关键事实 已确立事实", "本章涉及的主要角色有哪些", "本章时间/地点的具体边界是什么", "本章需遵守的世界规则/禁忌/代价有哪些", "与本章目标直接相关的已确立事实有哪些" ],
+        "hits" : 0,
+        "top_sources" : [ ],
+        "limit" : 12,
+        "types_requested" : [ "fact", "summary", "character", "world_rule", "world_entity", "text_chunk", "memory" ],
+        "semantic_rerank" : false,
+        "rerank_query" : "",
+        "rerank_top_k" : 0,
+        "round" : 1,
+        "note" : ""
+      }
+    },
+    "unresolved_gaps" : [ {
+      "kind" : "detail_gap",
+      "text" : "本章涉及的主要角色有哪些",
+      "queries" : [ "角色 人物 参与" ],
+      "ask_user" : true,
+      "key" : "V1C1:detail_gap:本章涉及的主要角色有哪些",
+      "support_score" : 0.0
+    }, {
+      "kind" : "detail_gap",
+      "text" : "本章时间/地点的具体边界是什么",
+      "queries" : [ "时间 地点 场景" ],
+      "ask_user" : true,
+      "key" : "V1C1:detail_gap:本章时间/地点的具体边界是什么",
+      "support_score" : 0.0
+    }, {
+      "kind" : "plot_point",
+      "text" : "本章需遵守的世界规则/禁忌/代价有哪些",
+      "queries" : [ "规则 禁忌 代价 限制" ],
+      "ask_user" : true,
+      "key" : "V1C1:plot_point:本章需遵守的世界规则/禁忌/代价有哪些",
+      "support_score" : 0.0
+    } ],
+    "retrieval_requests" : [ {
+      "round" : 1,
+      "gap" : {
+        "kind" : "detail_gap",
+        "text" : "本章涉及的主要角色有哪些",
+        "queries" : [ "角色 人物 参与" ],
+        "ask_user" : true,
+        "key" : "V1C1:detail_gap:本章涉及的主要角色有哪些"
+      },
+      "queries" : [ "角色 人物 参与" ],
+      "types" : { },
+      "count" : 0,
+      "support_score" : 0.0,
+      "top_sources" : [ ],
+      "plan_queries" : [ "本章涉及的主要角色有哪些", "本章时间/地点的具体边界是什么", "本章需遵守的世界规则/禁忌/代价有哪些", "与本章目标直接相关的已确立事实有哪些" ]
+    }, {
+      "round" : 1,
+      "gap" : {
+        "kind" : "detail_gap",
+        "text" : "本章时间/地点的具体边界是什么",
+        "queries" : [ "时间 地点 场景" ],
+        "ask_user" : true,
+        "key" : "V1C1:detail_gap:本章时间/地点的具体边界是什么"
+      },
+      "queries" : [ "时间 地点 场景" ],
+      "types" : { },
+      "count" : 0,
+      "support_score" : 0.0,
+      "top_sources" : [ ],
+      "plan_queries" : [ "本章涉及的主要角色有哪些", "本章时间/地点的具体边界是什么", "本章需遵守的世界规则/禁忌/代价有哪些", "与本章目标直接相关的已确立事实有哪些" ]
+    }, {
+      "round" : 1,
+      "gap" : {
+        "kind" : "plot_point",
+        "text" : "本章需遵守的世界规则/禁忌/代价有哪些",
+        "queries" : [ "规则 禁忌 代价 限制" ],
+        "ask_user" : true,
+        "key" : "V1C1:plot_point:本章需遵守的世界规则/禁忌/代价有哪些"
+      },
+      "queries" : [ "规则 禁忌 代价 限制" ],
+      "types" : { },
+      "count" : 0,
+      "support_score" : 0.0,
+      "top_sources" : [ ],
+      "plan_queries" : [ "本章涉及的主要角色有哪些", "本章时间/地点的具体边界是什么", "本章需遵守的世界规则/禁忌/代价有哪些", "与本章目标直接相关的已确立事实有哪些" ]
+    }, {
+      "round" : 1,
+      "gap" : {
+        "kind" : "detail_gap",
+        "text" : "与本章目标直接相关的已确立事实有哪些",
+        "queries" : [ "关键事实 已确立事实" ],
+        "ask_user" : true,
+        "key" : "V1C1:detail_gap:与本章目标直接相关的已确立事实有哪些"
+      },
+      "queries" : [ "关键事实 已确立事实" ],
+      "types" : { },
+      "count" : 0,
+      "support_score" : 0.0,
+      "top_sources" : [ ],
+      "plan_queries" : [ "本章涉及的主要角色有哪些", "本章时间/地点的具体边界是什么", "本章需遵守的世界规则/禁忌/代价有哪些", "与本章目标直接相关的已确立事实有哪些" ]
+    }, {
+      "round" : 1,
+      "gap" : {
+        "kind" : "extra_research",
+        "text" : "研究补充查询",
+        "queries" : [ "本章涉及的主要角色有哪些", "本章时间/地点的具体边界是什么", "本章需遵守的世界规则/禁忌/代价有哪些", "与本章目标直接相关的已确立事实有哪些" ],
+        "ask_user" : false,
+        "key" : "V1C1:extra_research:研究补充查询"
+      },
+      "queries" : [ "本章涉及的主要角色有哪些", "本章时间/地点的具体边界是什么", "本章需遵守的世界规则/禁忌/代价有哪些", "与本章目标直接相关的已确立事实有哪些" ],
+      "types" : { },
+      "count" : 0,
+      "support_score" : 0.0,
+      "top_sources" : [ ],
+      "plan_queries" : [ "本章涉及的主要角色有哪些", "本章时间/地点的具体边界是什么", "本章需遵守的世界规则/禁忌/代价有哪些", "与本章目标直接相关的已确立事实有哪些" ]
+    } ],
+    "seed_entities" : [ ],
+    "seed_window" : 2,
+    "gaps" : [ {
+      "kind" : "detail_gap",
+      "text" : "本章涉及的主要角色有哪些",
+      "queries" : [ "角色 人物 参与" ],
+      "ask_user" : true,
+      "key" : "V1C1:detail_gap:本章涉及的主要角色有哪些"
+    }, {
+      "kind" : "detail_gap",
+      "text" : "本章时间/地点的具体边界是什么",
+      "queries" : [ "时间 地点 场景" ],
+      "ask_user" : true,
+      "key" : "V1C1:detail_gap:本章时间/地点的具体边界是什么"
+    }, {
+      "kind" : "plot_point",
+      "text" : "本章需遵守的世界规则/禁忌/代价有哪些",
+      "queries" : [ "规则 禁忌 代价 限制" ],
+      "ask_user" : true,
+      "key" : "V1C1:plot_point:本章需遵守的世界规则/禁忌/代价有哪些"
+    }, {
+      "kind" : "detail_gap",
+      "text" : "与本章目标直接相关的已确立事实有哪些",
+      "queries" : [ "关键事实 已确立事实" ],
+      "ask_user" : true,
+      "key" : "V1C1:detail_gap:与本章目标直接相关的已确立事实有哪些"
+    } ],
+    "planned_queries" : [ "章需遵守 世界规则/ 规则/禁忌" ],
+    "planned_queries_all" : [ "章需遵守 世界规则/ 规则/禁忌" ],
+    "questions" : [ {
+      "type" : "detail_gap",
+      "text" : "细节方面：本章涉及的主要角色有哪些？",
+      "key" : "V1C1:detail_gap:本章涉及的主要角色有哪些",
+      "reason" : "证据不足，缺口：本章涉及的主要角色有哪些"
+    }, {
+      "type" : "detail_gap",
+      "text" : "细节方面：本章时间/地点的具体边界是什么？",
+      "key" : "V1C1:detail_gap:本章时间/地点的具体边界是什么",
+      "reason" : "证据不足，缺口：本章时间/地点的具体边界是什么"
+    }, {
+      "type" : "plot_point",
+      "text" : "为达成本章目标，本章需遵守的世界规则/禁忌/代价有哪些？",
+      "key" : "V1C1:plot_point:本章需遵守的世界规则/禁忌/代价有哪些",
+      "reason" : "证据不足，缺口：本章需遵守的世界规则/禁忌/代价有哪些"
+    } ],
+    "sufficiency_report" : {
+      "sufficient" : false,
+      "needs_user_input" : true,
+      "missing_entities" : [ "本章涉及的主要角色有哪些", "本章时间/地点的具体边界是什么", "本章需遵守的世界规则/禁忌/代价有哪些", "与本章目标直接相关的已确立事实有哪些" ],
+      "weak_gaps" : [ ],
+      "critical_weak_gaps" : [ ],
+      "unknown_gaps" : [ ],
+      "evidence_types" : { }
+    },
+    "research_trace" : [ {
+      "round" : 1,
+      "gap" : {
+        "kind" : "detail_gap",
+        "text" : "本章涉及的主要角色有哪些",
+        "queries" : [ "角色 人物 参与" ],
+        "ask_user" : true,
+        "key" : "V1C1:detail_gap:本章涉及的主要角色有哪些"
+      },
+      "queries" : [ "角色 人物 参与" ],
+      "count" : 0,
+      "types" : { },
+      "support_score" : 0.0,
+      "skipped" : false,
+      "reason" : "",
+      "top_sources" : [ ],
+      "stop_reason" : "max_rounds",
+      "note" : "达到问题确认阶段"
+    }, {
+      "round" : 1,
+      "gap" : {
+        "kind" : "detail_gap",
+        "text" : "本章时间/地点的具体边界是什么",
+        "queries" : [ "时间 地点 场景" ],
+        "ask_user" : true,
+        "key" : "V1C1:detail_gap:本章时间/地点的具体边界是什么"
+      },
+      "queries" : [ "时间 地点 场景" ],
+      "count" : 0,
+      "types" : { },
+      "support_score" : 0.0,
+      "skipped" : false,
+      "reason" : "",
+      "top_sources" : [ ],
+      "stop_reason" : "max_rounds",
+      "note" : "达到问题确认阶段"
+    }, {
+      "round" : 1,
+      "gap" : {
+        "kind" : "plot_point",
+        "text" : "本章需遵守的世界规则/禁忌/代价有哪些",
+        "queries" : [ "规则 禁忌 代价 限制" ],
+        "ask_user" : true,
+        "key" : "V1C1:plot_point:本章需遵守的世界规则/禁忌/代价有哪些"
+      },
+      "queries" : [ "规则 禁忌 代价 限制" ],
+      "count" : 0,
+      "types" : { },
+      "support_score" : 0.0,
+      "skipped" : false,
+      "reason" : "",
+      "top_sources" : [ ],
+      "stop_reason" : "max_rounds",
+      "note" : "达到问题确认阶段"
+    }, {
+      "round" : 1,
+      "gap" : {
+        "kind" : "detail_gap",
+        "text" : "与本章目标直接相关的已确立事实有哪些",
+        "queries" : [ "关键事实 已确立事实" ],
+        "ask_user" : true,
+        "key" : "V1C1:detail_gap:与本章目标直接相关的已确立事实有哪些"
+      },
+      "queries" : [ "关键事实 已确立事实" ],
+      "count" : 0,
+      "types" : { },
+      "support_score" : 0.0,
+      "skipped" : false,
+      "reason" : "",
+      "top_sources" : [ ],
+      "stop_reason" : "max_rounds",
+      "note" : "达到问题确认阶段"
+    }, {
+      "round" : 1,
+      "gap" : {
+        "kind" : "extra_research",
+        "text" : "研究补充查询",
+        "queries" : [ "本章涉及的主要角色有哪些", "本章时间/地点的具体边界是什么", "本章需遵守的世界规则/禁忌/代价有哪些", "与本章目标直接相关的已确立事实有哪些" ],
+        "ask_user" : false,
+        "key" : "V1C1:extra_research:研究补充查询"
+      },
+      "queries" : [ "本章涉及的主要角色有哪些", "本章时间/地点的具体边界是什么", "本章需遵守的世界规则/禁忌/代价有哪些", "与本章目标直接相关的已确立事实有哪些" ],
+      "count" : 0,
+      "types" : { },
+      "support_score" : 0.0,
+      "skipped" : false,
+      "reason" : "",
+      "top_sources" : [ ],
+      "stop_reason" : "max_rounds",
+      "note" : "达到问题确认阶段"
+    } ],
+    "research_stop_reason" : "max_rounds",
+    "text_chunks" : [ ],
+    "facts" : [ ],
+    "character_cards" : [ ],
+    "world_cards" : [ ]
+  },
+  "chapter_digest" : {
+    "summary" : "",
+    "title" : "消失的人"
+  }
+}

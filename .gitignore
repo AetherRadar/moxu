@@ -1,0 +1,94 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+*.spec
+
+# Local databases / caches
+*.sqlite
+*.sqlite3
+*.db
+*.tmp
+
+# Environment & Secrets (CRITICAL)
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.secret
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project data - committed (repo is private)
+# backend/data/ is generated at runtime by the packaged jar
+backend/data/
+backend/data/agent_assignments.json
+
+# Logs
+*.log
+traces/
+
+# Temporary Debug Scripts (root level only, not tests/)
+/test_*.py
+/debug_*.py
+/verify_api_config.py
+backend/test_*.py
+backend/debug_*.py
+
+# Static Assets (if generated)
+backend/static/
+
+# Java output and per-launch runtime (may contain local configuration)
+backend-java/target/
+.moxu-runtime/
+.wenshape-runtime/
+/work/
+
+# Internal reports / plans / logs (not for repo)
+003.md
+AGENTS.md
+CLAUDE.md
+DEBUG_INSTRUCTIONS.md
+FIXES_APPLIED.md
+MVP1-ACCEPTANCE.md
+STARTUP_TROUBLESHOOTING.md
+gamma_script.md
+market.md
+docs/TODO.md
+
+build_release.py
+
+# Frontend
+web/node_modules/
+web/dist/
+web/.vite/

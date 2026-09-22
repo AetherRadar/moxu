@@ -1,0 +1,205 @@
+@import 'tailwindcss';
+
+/* 深色模式走 class 策略，由 <html class="dark"> 控制，避免跟随系统造成写作时突然变色。 */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* ── 字体 ────────────────────────────────────────────────
+     正文用衬线，中文长文阅读更省力；UI 用无衬线；代码/差异用等宽。
+     全部走系统字体栈，不打包字体文件，首屏没有 FOIT。 */
+  --font-sans:
+    'Inter var', 'Inter', system-ui, -apple-system, 'Segoe UI Variable Text', 'Segoe UI',
+    'PingFang SC', 'HarmonyOS Sans SC', 'Microsoft YaHei UI', 'Noto Sans SC', sans-serif;
+  --font-serif:
+    'Source Han Serif SC', 'Noto Serif SC', 'Songti SC', 'STSong', 'SimSun', Georgia,
+    'Times New Roman', serif;
+  --font-mono:
+    'JetBrains Mono', 'Cascadia Code', 'SF Mono', 'Sarasa Mono SC', Consolas, monospace;
+
+  /* ── 墨色阶（中性）──────────────────────────────────────
+     不用纯黑，用带一点青蓝的炭墨色，长时间盯屏不刺眼。 */
+  --color-ink-50: oklch(0.977 0.003 247);
+  --color-ink-100: oklch(0.945 0.005 247);
+  --color-ink-200: oklch(0.885 0.007 247);
+  --color-ink-300: oklch(0.78 0.009 247);
+  --color-ink-400: oklch(0.645 0.011 247);
+  --color-ink-500: oklch(0.53 0.013 247);
+  --color-ink-600: oklch(0.43 0.014 247);
+  --color-ink-700: oklch(0.345 0.014 247);
+  --color-ink-800: oklch(0.265 0.013 247);
+  --color-ink-850: oklch(0.22 0.012 247);
+  --color-ink-900: oklch(0.182 0.011 247);
+  --color-ink-950: oklch(0.142 0.01 247);
+  --color-ink-975: oklch(0.112 0.009 247);
+
+  /* ── 纸色阶（浅色模式背景）───────────────────────────── */
+  --color-paper-50: oklch(0.993 0.004 85);
+  --color-paper-100: oklch(0.981 0.006 85);
+  --color-paper-200: oklch(0.957 0.008 85);
+  --color-paper-300: oklch(0.922 0.01 85);
+
+  /* ── 主色：青瓷（操作/选中）───────────────────────────── */
+  --color-celadon-300: oklch(0.86 0.062 178);
+  --color-celadon-400: oklch(0.782 0.088 178);
+  --color-celadon-500: oklch(0.7 0.104 178);
+  --color-celadon-600: oklch(0.6 0.096 178);
+  --color-celadon-700: oklch(0.49 0.078 178);
+  --color-celadon-900: oklch(0.31 0.05 178);
+
+  /* ── 强调：朱砂（删除/危险/未保存）──────────────────── */
+  --color-cinnabar-300: oklch(0.82 0.1 27);
+  --color-cinnabar-400: oklch(0.73 0.15 27);
+  --color-cinnabar-500: oklch(0.647 0.192 27);
+  --color-cinnabar-600: oklch(0.565 0.182 27);
+  --color-cinnabar-900: oklch(0.32 0.1 27);
+
+  /* ── 辅助：藤黄（警告/生成中）──────────────────────── */
+  --color-gamboge-300: oklch(0.87 0.11 80);
+  --color-gamboge-400: oklch(0.8 0.14 75);
+  --color-gamboge-500: oklch(0.72 0.155 70);
+  --color-gamboge-900: oklch(0.36 0.09 70);
+
+  /* ── 辅助：石绿（成功/已应用）──────────────────────── */
+  --color-malachite-400: oklch(0.78 0.15 150);
+  --color-malachite-500: oklch(0.68 0.16 150);
+  --color-malachite-900: oklch(0.32 0.08 150);
+
+  /* ── 语义别名 ───────────────────────────────────────── */
+  --color-canvas: var(--color-ink-950);
+  --color-surface: var(--color-ink-900);
+  --color-surface-raised: var(--color-ink-850);
+  --color-edge: var(--color-ink-800);
+  --color-accent: var(--color-celadon-500);
+
+  /* ── 排版节奏 ───────────────────────────────────────── */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+
+  /* ── 圆角/阴影 ──────────────────────────────────────── */
+  --radius-panel: 0.625rem;
+  --shadow-panel: 0 1px 2px oklch(0 0 0 / 0.3), 0 8px 24px -8px oklch(0 0 0 / 0.45);
+  --shadow-float: 0 2px 4px oklch(0 0 0 / 0.28), 0 16px 48px -12px oklch(0 0 0 / 0.55);
+
+  /* ── 动效 ───────────────────────────────────────────── */
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --animate-fade-in: fade-in 0.14s var(--ease-out-quint);
+  --animate-rise: rise 0.18s var(--ease-out-quint);
+  --animate-shimmer: shimmer 1.6s linear infinite;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.99);
+  }
+}
+
+@keyframes shimmer {
+  to {
+    background-position: 200% 0;
+  }
+}
+
+@layer base {
+  :root {
+    color-scheme: dark;
+    /* 行高偏大，中文正文更透气 */
+    --prose-leading: 1.9;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-ink-950 text-ink-100 font-sans antialiased;
+    overflow: hidden; /* 外壳不滚动，滚动交给各面板 */
+    text-rendering: optimizeLegibility;
+  }
+
+  /* 只在键盘操作时显示焦点环，鼠标点击不出现 */
+  :focus-visible {
+    @apply outline-celadon-500 outline-2 outline-offset-2;
+  }
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  ::selection {
+    background-color: color-mix(in oklch, var(--color-celadon-500) 32%, transparent);
+  }
+
+  /* 细滚动条，overlay 风格，不占布局宽度 */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-ink-700) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-clip: padding-box;
+    border: 3px solid transparent;
+    border-radius: 9999px;
+    background-color: var(--color-ink-700);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--color-ink-600);
+  }
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  /* 数字等宽，字数统计跳动时不抖 */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@layer components {
+  /* 章节正文的阅读排版 */
+  .prose-chapter {
+    font-family: var(--font-serif);
+    line-height: var(--prose-leading);
+    font-size: 1.0625rem;
+    letter-spacing: 0.01em;
+  }
+  .prose-chapter p {
+    margin-block: 0 1.15em;
+    text-indent: 2em;
+  }
+
+  /* 骨架屏 */
+  .skeleton {
+    background-image: linear-gradient(
+      90deg,
+      var(--color-ink-850) 0%,
+      var(--color-ink-800) 40%,
+      var(--color-ink-850) 80%
+    );
+    background-size: 200% 100%;
+    animation: var(--animate-shimmer);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

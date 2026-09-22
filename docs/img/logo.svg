@@ -1,0 +1,24 @@
+<svg width="800" height="160" viewBox="0 0 800 160" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    .brand-cn {
+      font-family: "Kaiti SC", "STKaiti", "KaiTi", serif;
+      font-weight: 600;
+      font-size: 88px;
+      fill: #1F2937;
+      text-anchor: middle;
+      dominant-baseline: middle;
+      letter-spacing: 0.18em;
+    }
+    .brand-en {
+      font-family: "Inter", "Helvetica Neue", system-ui, sans-serif;
+      font-weight: 600;
+      font-size: 44px;
+      fill: #374151;
+      text-anchor: middle;
+      dominant-baseline: middle;
+      letter-spacing: 0.14em;
+    }
+  </style>
+  <text x="200" y="82" class="brand-cn">墨序</text>
+  <text x="560" y="85" class="brand-en">MoXu</text>
+</svg>

@@ -1,0 +1,13 @@
+[ {
+  "name" : "新建配置",
+  "provider" : "custom",
+  "api_key" : "sk-6e5a5aefba8a3f142c03219b5cb38494acabd973c6248388a9540780cdcadf90",
+  "model" : "Qwen3.8-flash",
+  "base_url" : "https://ai.anna.tf/v1",
+  "api_style" : "chat_completions",
+  "temperature" : 0.7,
+  "max_tokens" : 8000,
+  "id" : "0a5ea9ec-e95b-4639-b391-ba1ba901ed3a",
+  "updated_at" : 1790007614,
+  "created_at" : 1789919396
+} ]
