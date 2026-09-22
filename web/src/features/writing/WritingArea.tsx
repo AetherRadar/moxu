@@ -2,7 +2,7 @@ import { lazy, useCallback, useEffect, useRef, useState, type ReactNode } from '
 import { useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { History, PenLine, Save, Sparkles, Wand2 } from 'lucide-react';
+import { History, FileText, PenLine, Save, Sparkles, Wand2 } from 'lucide-react';
 import { draftsApi, qk } from '@/api';
 import { ApiError } from '@/lib/http';
 import { formatChapterLabel, formatVolumeLabel } from '@/lib/chapter-id';
@@ -26,6 +26,9 @@ const EditSuggestDialog = lazy(() =>
 );
 const VersionsDialog = lazy(() =>
   import('@/features/writing/VersionsDialog').then((m) => ({ default: m.VersionsDialog })),
+);
+const SceneBriefDialog = lazy(() =>
+  import('@/features/writing/SceneBriefDialog').then((m) => ({ default: m.SceneBriefDialog })),
 );
 
 const AUTOSAVE_DELAY = 1600;
@@ -78,7 +81,7 @@ function ChapterEditor({ projectId, chapter }: { projectId: string; chapter: str
   const [saveState, setSaveState] = useState<SaveState>('idle');
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [selection, setSelection] = useState<EditorSelection>({ from: 0, to: 0, text: '' });
-  const [dialog, setDialog] = useState<'session' | 'suggest' | 'versions' | null>(null);
+  const [dialog, setDialog] = useState<'session' | 'suggest' | 'versions' | 'brief' | null>(null);
 
   titleRef.current = title;
 
@@ -263,6 +266,9 @@ function ChapterEditor({ projectId, chapter }: { projectId: string; chapter: str
           <Button tone="ghost" size="sm" icon={<History />} onClick={() => setDialog('versions')}>
             版本
           </Button>
+          <Button tone="ghost" size="sm" icon={<FileText />} onClick={() => setDialog('brief')}>
+            简报
+          </Button>
           <Button tone="ghost" size="sm" icon={<Wand2 />} onClick={() => setDialog('suggest')}>
             修订
           </Button>
@@ -327,6 +333,11 @@ function ChapterEditor({ projectId, chapter }: { projectId: string; chapter: str
             onRestore={applyText}
             onClose={() => setDialog(null)}
           />
+        </LazyOverlay>
+      )}
+      {dialog === 'brief' && (
+        <LazyOverlay>
+          <SceneBriefDialog projectId={projectId} chapter={chapter} onClose={() => setDialog(null)} />
         </LazyOverlay>
       )}
     </div>
