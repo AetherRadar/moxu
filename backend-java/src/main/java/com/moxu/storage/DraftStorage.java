@@ -3,7 +3,6 @@ package com.moxu.storage;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.moxu.model.entity.ChapterSummary;
 import com.moxu.model.entity.Draft;
-import com.moxu.model.entity.ReviewResult;
 import com.moxu.model.entity.SceneBrief;
 import com.moxu.search.ProjectLexicon;
 import com.moxu.search.ProjectLexiconResolver;
@@ -238,29 +237,6 @@ public class DraftStorage extends BaseStorage {
         }
     }
 
-    public void saveReview(String projectId, String chapter, ReviewResult review) throws IOException {
-        String canonical = canonicalizeChapterId(chapter);
-        review.setChapter(canonical);
-        Path filePath = getProjectPath(projectId).resolve("drafts").resolve(canonical).resolve("review.yaml");
-        writeYaml(filePath, review);
-    }
-
-    public Optional<ReviewResult> getReview(String projectId, String chapter) {
-        String resolved = resolveChapterDirName(projectId, chapter);
-        Path filePath = getProjectPath(projectId).resolve("drafts").resolve(resolved).resolve("review.yaml");
-        if (!Files.exists(filePath)) {
-            return Optional.empty();
-        }
-        try {
-            ReviewResult review = readYaml(filePath, ReviewResult.class);
-            review.setChapter(canonicalizeChapterId(chapter));
-            return Optional.of(review);
-        } catch (IOException e) {
-            log.error("读取审稿结果失败: {}", filePath, e);
-            return Optional.empty();
-        }
-    }
-    
     // ========== 草稿版本管理 ==========
     
     /**

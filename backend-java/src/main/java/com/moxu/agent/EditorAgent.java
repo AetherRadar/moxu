@@ -5,8 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.moxu.llm.LlmGateway;
 import com.moxu.llm.LlmResponse;
 import com.moxu.model.entity.Draft;
-import com.moxu.model.entity.Issue;
-import com.moxu.model.entity.ReviewResult;
 import com.moxu.rewrite.PolishResult;
 import com.moxu.rewrite.PolishService;
 import com.moxu.storage.CardStorage;
@@ -1286,125 +1284,6 @@ public class EditorAgent extends BaseAgent {
         return null;
     }
 
-    public ReviewResult reviewDraft(String projectId, String chapter, String draftVersion, String draftContent) {
-        if (draftContent == null || draftContent.isBlank()) {
-            return ReviewResult.builder()
-                    .chapter(chapter)
-                    .draftVersion(draftVersion)
-                    .overallAssessment("草稿为空，无法审阅。")
-                    .canProceed(false)
-                    .issues(List.of(Issue.builder()
-                            .severity("high")
-                            .category("content")
-                            .location("全文")
-                            .problem("当前草稿为空。")
-                            .suggestion("请先生成或粘贴正文，再进行审阅。")
-                            .build()))
-                    .build();
-        }
-
-        String systemPrompt = """
-                你是一位小说审稿编辑。请审查草稿在剧情推进、人物一致性、表达清晰度、网文节奏与去 AI 味上的问题。
-                只输出 JSON，不要解释：
-                {
-                  "issues": [{"severity":"low|medium|high","category":"plot|character|style|clarity|consistency","location":"位置","problem":"问题","suggestion":"建议"}],
-                  "overall_assessment": "总体评价",
-                  "can_proceed": true
-                }
-                """;
-        List<String> contextItems = new ArrayList<>();
-        try {
-            Map<String, Object> memoryPack = memoryPackStorage.readPack(projectId, chapter);
-            contextItems.addAll(formatMemoryPackContext(memoryPack));
-        } catch (Exception e) {
-            log.debug("reviewDraft: 读取 memory pack 失败: {}", e.getMessage());
-        }
-        String userPrompt = """
-                请审阅以下章节草稿，只列出最关键的 0-6 个问题。若整体可继续编辑或定稿，也要明确说明。
-
-                额外关注：
-                - 是否存在作者总结腔、解释腔、设定直讲
-                - 是否存在模板化收尾、钩子生硬、网文节奏拖沓
-                - 是否出现动作后立刻解释、段尾硬升华、配角过于工具化
-
-                章节：%s
-                版本：%s
-
-                正文：
-                %s
-                """.formatted(chapter, draftVersion, draftContent);
-
-        try {
-            LlmResponse response = callLlm(buildMessages(systemPrompt, userPrompt, contextItems));
-            Map<String, Object> parsed = parseJsonObject(response.getContent());
-            List<Issue> issues = parseIssues(parsed.get("issues"));
-            String overall = String.valueOf(parsed.getOrDefault("overall_assessment", "整体可读，但建议结合问题项再检查一轮。"));
-            boolean canProceed = !(parsed.get("can_proceed") instanceof Boolean b) || b;
-            boolean hasHighIssue = issues.stream().anyMatch(issue -> "high".equalsIgnoreCase(issue.getSeverity()));
-            if (hasHighIssue) {
-                canProceed = false;
-            }
-            return ReviewResult.builder()
-                    .chapter(chapter)
-                    .draftVersion(draftVersion)
-                    .issues(issues)
-                    .overallAssessment(overall)
-                    .canProceed(canProceed)
-                    .build();
-        } catch (Exception e) {
-            log.warn("reviewDraft failed, using heuristic fallback: {}", e.getMessage());
-            List<Issue> issues = new ArrayList<>();
-            if (draftContent.length() < 800) {
-                issues.add(Issue.builder()
-                        .severity("medium")
-                        .category("plot")
-                        .location("全文")
-                        .problem("章节篇幅偏短，可能未充分完成场景推进。")
-                        .suggestion("检查是否补足冲突推进、人物反应和收束段。")
-                        .build());
-            }
-            if (draftContent.contains("[TO_CONFIRM")) {
-                issues.add(Issue.builder()
-                        .severity("medium")
-                        .category("consistency")
-                        .location("全文")
-                        .problem("正文中仍存在待确认标记，说明关键信息尚未完全落实。")
-                        .suggestion("确认相关设定或细节后，替换所有 [TO_CONFIRM] 标记。")
-                        .build());
-            }
-            String normalized = draftContent.replace("\r\n", "\n").replace('\r', '\n');
-            for (String paragraph : normalized.split("\n\n+")) {
-                String trimmed = paragraph.trim();
-                if (trimmed.length() > 420) {
-                    issues.add(Issue.builder()
-                            .severity("low")
-                            .category("clarity")
-                            .location("长段落")
-                            .problem("存在过长段落，可能影响网文阅读节奏。")
-                            .suggestion("考虑拆分长段落，增强节奏感和信息层次。")
-                            .build());
-                    break;
-                }
-            }
-            String tail = normalized.length() > 240 ? normalized.substring(normalized.length() - 240) : normalized;
-            if (tail.contains("这意味着") || tail.contains("总之") || tail.contains("归根结底") || tail.contains("可以说")) {
-                issues.add(Issue.builder()
-                        .severity("medium")
-                        .category("style")
-                        .location("结尾段")
-                        .problem("结尾存在明显的总结腔/解释腔，容易带出 AI 味。")
-                        .suggestion("将结尾改为具体动作、对话或现场异样，不要直接下结论。")
-                        .build());
-            }
-            return ReviewResult.builder()
-                    .chapter(chapter)
-                    .draftVersion(draftVersion)
-                    .issues(issues)
-                    .overallAssessment(issues.isEmpty() ? "未发现明显结构性问题，可继续后续流程。" : "存在少量需要复核的问题，建议修改后再确认。")
-                    .canProceed(issues.stream().noneMatch(issue -> "high".equalsIgnoreCase(issue.getSeverity())) && issues.size() <= 1)
-                    .build();
-        }
-    }
 
     private Map<String, Object> parseJsonObject(String raw) throws Exception {
         String content = THINK_PATTERN.matcher(raw == null ? "" : raw).replaceAll("").trim();
@@ -1414,25 +1293,6 @@ public class EditorAgent extends BaseAgent {
             content = content.substring(start, end + 1);
         }
         return objectMapper.readValue(content, new TypeReference<>() {});
-    }
-
-    private List<Issue> parseIssues(Object rawIssues) {
-        List<Issue> issues = new ArrayList<>();
-        if (rawIssues instanceof List<?> list) {
-            for (Object item : list) {
-                if (!(item instanceof Map<?, ?> map)) {
-                    continue;
-                }
-                issues.add(Issue.builder()
-                        .severity(stringValue(map, "severity", "medium"))
-                        .category(stringValue(map, "category", "style"))
-                        .location(stringValue(map, "location", "全文"))
-                        .problem(stringValue(map, "problem", ""))
-                        .suggestion(stringValue(map, "suggestion", ""))
-                        .build());
-            }
-        }
-        return issues;
     }
 
     private List<String> formatMemoryPackContext(Map<String, Object> memoryPack) {

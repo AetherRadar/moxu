@@ -558,7 +558,6 @@ public class Orchestrator {
                 response.put("version", rewriteDraft != null ? rewriteDraft.getVersion() : "v1");
                 response.put("iteration", iterationCount);
                 response.put("proposals", detectProposals(projectId, rewriteContent));
-                saveDraftReview(projectId, chapter, rewriteDraft);
                 return response;
             }
             
@@ -595,7 +594,6 @@ public class Orchestrator {
             response.put("version", result.getOrDefault("version", latestVersion));
             response.put("iteration", iterationCount);
             response.put("proposals", detectProposals(projectId, editedContent));
-            saveDraftReview(projectId, chapter, editedDraft);
             return response;
             
         } catch (Exception e) {
@@ -623,7 +621,6 @@ public class Orchestrator {
                 return;
             }
             Draft draft = draftOpt.get();
-            saveDraftReview(projectId, chapter, draft);
             SceneBrief sceneBrief = draftStorage.getSceneBrief(projectId, chapter).orElse(null);
             String goal = sceneBrief != null && sceneBrief.getGoal() != null ? sceneBrief.getGoal() : "";
             Map<String, Object> writerContext = prepareWriterContext(projectId, chapter, goal, sceneBrief, List.of(), List.of());
@@ -784,7 +781,6 @@ public class Orchestrator {
         Draft draft = (Draft) result.get("draft");
         String draftContent = draft != null && draft.getContent() != null ? draft.getContent() : "";
         List<Map<String, Object>> proposals = detectProposals(projectId, draftContent);
-        saveDraftReview(projectId, chapter, draft);
         
         Map<String, Object> response = new HashMap<>();
         response.put("success", true);
@@ -6680,18 +6676,6 @@ public class Orchestrator {
             return new int[]{vol, ch};
         }
         return new int[]{1, 0};
-    }
-
-    private void saveDraftReview(String projectId, String chapter, Draft draft) {
-        if (draft == null || draft.getContent() == null || draft.getContent().isBlank()) {
-            return;
-        }
-        try {
-            String version = draft.getVersion() != null && !draft.getVersion().isBlank() ? draft.getVersion() : "current";
-            draftStorage.saveReview(projectId, chapter, editorAgent.reviewDraft(projectId, chapter, version, draft.getContent()));
-        } catch (Exception e) {
-            log.warn("saveDraftReview 失败: {}", e.getMessage());
-        }
     }
 
     private void persistMemoryPack(String projectId, String chapter, Map<String, Object> context, String source) {
