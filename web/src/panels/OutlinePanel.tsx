@@ -44,6 +44,9 @@ import { useWorkspaceStore } from '@/stores/workspace';
 const ChapterPlanDialog = lazy(() =>
   import('@/features/outline/ChapterPlanDialog').then((m) => ({ default: m.ChapterPlanDialog })),
 );
+const RewriteDraftDialog = lazy(() =>
+  import('@/features/outline/RewriteDraftDialog').then((m) => ({ default: m.RewriteDraftDialog })),
+);
 
 type OutlineTab = 'master' | 'volumes' | 'chapters' | 'explore';
 
@@ -146,13 +149,7 @@ function OutlineEditor({
         spellCheck={false}
       />
       <div className="flex items-center gap-2">
-        <Button
-          tone="primary"
-          size="sm"
-          onClick={() => onSave(draft)}
-          loading={saving}
-          disabled={!dirty}
-        >
+        <Button tone="primary" size="sm" onClick={() => onSave(draft)} loading={saving} disabled={!dirty}>
           保存
         </Button>
         {dirty && (
@@ -211,12 +208,7 @@ function CandidateCards({
             </div>
           )}
           <div className="mt-2 flex items-center gap-2">
-            <Button
-              tone="primary"
-              size="xs"
-              loading={adopting}
-              onClick={() => onAdopt(candidate)}
-            >
+            <Button tone="primary" size="xs" loading={adopting} onClick={() => onAdopt(candidate)}>
               采用此纲
             </Button>
             <span className="tnum text-2xs text-ink-600">
@@ -286,8 +278,7 @@ function MasterTab({ projectId }: { projectId: string }): ReactNode {
   const [recommended, setRecommended] = useState('');
 
   const generate = useMutation({
-    mutationFn: (instruction: string) =>
-      outlineApi.generateMasterCandidates(projectId, { instruction }),
+    mutationFn: (instruction: string) => outlineApi.generateMasterCandidates(projectId, { instruction }),
     onSuccess: (data) => {
       setCandidates(data.candidates);
       setRecommended(data.recommended_route_id);
@@ -367,10 +358,7 @@ function VolumesTab({ projectId }: { projectId: string }): ReactNode {
             initialChapters={planOpen.chapters}
             applying={apply.isPending}
             onApply={(chapters) =>
-              apply.mutate(
-                { volumeId: planOpen.volumeId, chapters },
-                { onSuccess: () => setPlanOpen(null) },
-              )
+              apply.mutate({ volumeId: planOpen.volumeId, chapters }, { onSuccess: () => setPlanOpen(null) })
             }
             onClose={() => setPlanOpen(null)}
           />
@@ -432,9 +420,7 @@ function VolumeOutlineSection({
         aria-expanded={open}
         className="flex w-full items-center gap-1.5 px-2 py-1.5 text-left hover:bg-ink-850"
       >
-        <span className="text-ink-500 [&_svg]:size-3.5">
-          {open ? <ChevronDown /> : <ChevronRight />}
-        </span>
+        <span className="text-ink-500 [&_svg]:size-3.5">{open ? <ChevronDown /> : <ChevronRight />}</span>
         <span className="min-w-0 flex-1 truncate text-xs font-medium text-ink-200">
           {formatVolumeLabel(volumeId, volumeTitle)}
         </span>
@@ -484,10 +470,7 @@ function ChaptersTab({ projectId }: { projectId: string }): ReactNode {
   const save = useSaveChapterOutline(projectId, chapterId ?? '');
   const content = chapterId === null ? '' : outlineContent(outline.data, { chapterId });
 
-  const allChapters = useMemo(
-    () => tree.volumes.flatMap((volume) => volume.chapters),
-    [tree.volumes],
-  );
+  const allChapters = useMemo(() => tree.volumes.flatMap((volume) => volume.chapters), [tree.volumes]);
   const chapterOptions = useMemo(
     () =>
       allChapters.map((item) => ({
@@ -517,6 +500,7 @@ function ChaptersTab({ projectId }: { projectId: string }): ReactNode {
   });
 
   const [instruction, setInstruction] = useState('');
+  const [rewriteOpen, setRewriteOpen] = useState(false);
 
   if (tree.isPending) return <SkeletonList rows={6} />;
   if (tree.chapterIds.length === 0) {
@@ -568,10 +552,30 @@ function ChaptersTab({ projectId }: { projectId: string }): ReactNode {
             >
               反推
             </Button>
+            <Button
+              tone="outline"
+              size="sm"
+              icon={<Sparkles />}
+              disabled={content.trim() === '' || (chapterNode?.wordCount ?? 0) === 0}
+              onClick={() => setRewriteOpen(true)}
+            >
+              按纲重构
+            </Button>
           </div>
           <p className="text-2xs leading-relaxed text-ink-600">
-            「反推」从这章已有正文提炼可执行章纲并直接保存；「生成」不看正文，按总纲+指令写。
+            「反推」从这章已有正文提炼可执行章纲并直接保存；「生成」不看正文，按总纲+指令写；
+            「按纲重构」反过来拿章纲重写正文，先看 diff 再落盘。
           </p>
+          {rewriteOpen && (
+            <LazyOverlay>
+              <RewriteDraftDialog
+                projectId={projectId}
+                chapterId={chapterId}
+                hasOutline={content.trim() !== ''}
+                onClose={() => setRewriteOpen(false)}
+              />
+            </LazyOverlay>
+          )}
         </>
       )}
     </div>
@@ -660,7 +664,13 @@ function ExploreTab({ projectId }: { projectId: string }): ReactNode {
             </label>
           ))}
         </div>
-        <Button tone="primary" size="sm" icon={<Compass />} loading={start.isPending} onClick={() => start.mutate()}>
+        <Button
+          tone="primary"
+          size="sm"
+          icon={<Compass />}
+          loading={start.isPending}
+          onClick={() => start.mutate()}
+        >
           开始探索
         </Button>
       </div>
