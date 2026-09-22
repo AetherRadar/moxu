@@ -29,6 +29,26 @@ class ArchivistAgentSummaryRecoveryTest {
     Path tempDir;
 
     @Test
+    void ordinaryRemainingTraceDoesNotInventSurvivalResources() {
+        QueueLlmGateway gateway = new QueueLlmGateway(List.of(
+                "{\"facts\":[],\"timeline_events\":[],\"character_states\":[{\"character\":\"陆沉\",\"state\":\"检查档案\"}]}"));
+        TestCardStorage cards = new TestCardStorage(tempDir);
+        cards.saveCharacter("p", CharacterCard.builder().name("陆沉").description("修复师").build());
+        ArchivistAgent agent = new ArchivistAgent(gateway, cards, new TestDraftStorage(tempDir), null, new TestCanonStorage(tempDir));
+        Map<String, Object> updates = agent.extractCanonUpdates("p", "V1C2", "陆沉检查档案，留下的只剩这道痕迹。");
+        assertFalse(updates.toString().contains("水囊"));
+        assertFalse(updates.toString().contains("资源极度匮乏"));
+    }
+
+    @Test
+    void invalidCanonOutputFailsInsteadOfPretendingThereWereNoFacts() {
+        ArchivistAgent agent = new ArchivistAgent(new QueueLlmGateway(List.of("not json")),
+                new TestCardStorage(tempDir), new TestDraftStorage(tempDir), null, new TestCanonStorage(tempDir));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
+                () -> agent.extractCanonUpdates("p", "V1C1", "这一段正文需要提取事实。"));
+    }
+
+    @Test
     void generateChapterSummary_recoversOpenLoopsWhenInitialSummaryOmitsThem() {
         QueueLlmGateway gateway = new QueueLlmGateway(List.of(
                 """
@@ -178,7 +198,7 @@ class ArchivistAgentSummaryRecoveryTest {
     }
 
     @Test
-    void extractCanonUpdates_supplementsSurvivalFactsWhenInitialExtractionMissesThem() {
+    void extractCanonUpdates_retainsUnsupportedSurvivalFactsForReview() {
         QueueLlmGateway gateway = new QueueLlmGateway(List.of(
                 """
                 {
@@ -214,7 +234,8 @@ class ArchivistAgentSummaryRecoveryTest {
 
         Map<String, Object> updates = agent.extractCanonUpdates("p", "V1C5", draft);
         @SuppressWarnings("unchecked")
-        List<Map<String, Object>> facts = (List<Map<String, Object>>) updates.get("facts");
+        List<Map<String, Object>> facts = (List<Map<String, Object>>) updates.get("pending_facts");
+        assertTrue(((List<?>) updates.get("facts")).isEmpty());
 
         assertFalse(facts.isEmpty());
         String combined = facts.stream()
@@ -225,7 +246,7 @@ class ArchivistAgentSummaryRecoveryTest {
     }
 
     @Test
-    void extractCanonUpdates_prioritizesNewDiscoveryFactsInAncientCaveChapter() {
+    void extractCanonUpdates_retainsUnsupportedDiscoveryFactsForReview() {
         QueueLlmGateway gateway = new QueueLlmGateway(List.of(
                 """
                 {
@@ -262,7 +283,8 @@ class ArchivistAgentSummaryRecoveryTest {
 
         Map<String, Object> updates = agent.extractCanonUpdates("p", "V1C6", draft);
         @SuppressWarnings("unchecked")
-        List<Map<String, Object>> facts = (List<Map<String, Object>>) updates.get("facts");
+        List<Map<String, Object>> facts = (List<Map<String, Object>>) updates.get("pending_facts");
+        assertTrue(((List<?>) updates.get("facts")).isEmpty());
 
         String combined = facts.stream()
                 .map(item -> String.valueOf(item.getOrDefault("statement", "")))

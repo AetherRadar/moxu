@@ -12,7 +12,7 @@ import org.springframework.context.annotation.Configuration;
  */
 @Data
 @Configuration
-@ConfigurationProperties(prefix = "Moxu.bindings")
+@ConfigurationProperties(prefix = "moxu.bindings")
 public class BindingsProperties {
 
     private Thresholds thresholds = new Thresholds();

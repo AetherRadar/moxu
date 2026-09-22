@@ -6,7 +6,7 @@ import org.springframework.context.annotation.Configuration;
 
 @Data
 @Configuration
-@ConfigurationProperties(prefix = "Moxu.rate-limit")
+@ConfigurationProperties(prefix = "moxu.rate-limit")
 public class RateLimitProperties {
 
     private boolean enabled = true;

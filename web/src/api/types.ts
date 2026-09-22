@@ -184,7 +184,16 @@ export interface SessionStatusResponse {
  * 到哪一步有哪些字段取决于 status——waiting_user_input 给 questions，
  * waiting_feedback 给 draft，completed 给 final_draft。
  */
+export interface ArchiveReport {
+  status: 'not_run' | 'running' | 'complete' | 'partial';
+  message?: string;
+  stages?: Record<string, { status: string; message?: string }>;
+  pending_facts?: { statement: string; evidence?: string; review_reason: string }[];
+  review?: { status: string; conflicts: { type: string; message?: string; evidence?: string }[] };
+}
+
 export interface SessionFlowResponse {
+  archive?: ArchiveReport;
   success?: boolean;
   status?: SessionStatusValue | string;
   scene_brief?: SceneBrief;

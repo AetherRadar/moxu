@@ -152,6 +152,15 @@ public class ContextSelectEngine {
         return retrievalSelect(projectId, query, itemTypes, topK, null, null);
     }
 
+    /** Story memory must only retrieve chapters already written before this one. */
+    public List<ContextItem> retrievalSelectForChapter(String projectId, String chapter, String query,
+                                                       List<String> itemTypes, int topK) {
+        List<String> written = draftStorage.writtenChaptersBefore(projectId, chapter);
+        // An empty filter means unrestricted in the existing search API.
+        return retrievalSelect(projectId, query, itemTypes, topK,
+                written.isEmpty() ? List.of("__no_previous_written_chapter__") : written, List.of(chapter));
+    }
+
     /**
      * 检索式选择（可限定 text_chunk / summary 的章节范围）
      */

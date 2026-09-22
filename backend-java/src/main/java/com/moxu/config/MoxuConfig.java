@@ -6,7 +6,7 @@ import org.springframework.context.annotation.Configuration;
 
 @Data
 @Configuration
-@ConfigurationProperties(prefix = "Moxu")
+@ConfigurationProperties(prefix = "moxu")
 public class MoxuConfig {
     
     /**

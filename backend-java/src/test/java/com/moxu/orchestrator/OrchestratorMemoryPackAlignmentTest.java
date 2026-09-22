@@ -325,7 +325,7 @@ class OrchestratorMemoryPackAlignmentTest {
                 )
         )));
         analysis.put("facts", List.of(
-                Map.of("statement", "发黑石面后的石缝连接一处废弃古洞，洞中残留石台与断裂石片", "confidence", 0.93d),
+                Map.of("statement", "发黑石面后的石缝连接一处废弃古洞，洞中残留石台与断裂石片", "confidence", 0.93d, "certainty", "explicit", "evidence", "王方顺着漏出白光的石缝钻入废弃古洞，洞中残留石台、断裂石片与受损阵纹。"),
                 Map.of("statement", "古洞地面残留受损阵纹，疑似旧日禁制或阵法残迹", "confidence", 0.92d),
                 Map.of("statement", "古洞深处的积水可少量饮用，王方得以补充少量饮水", "confidence", 0.9d),
                 Map.of("statement", "古洞石壁残留与“太阴”相关的壁刻和人形修炼图，疑似古修传承线索", "confidence", 0.95d),

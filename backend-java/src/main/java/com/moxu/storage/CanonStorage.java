@@ -695,6 +695,7 @@ public class CanonStorage extends BaseStorage {
                                                 List<Map<String, Object>> newTimelineEvents,
                                                 List<Map<String, Object>> newCharacterStates) {
         List<Map<String, Object>> conflicts = new ArrayList<>();
+        boolean checkFailed = false;
 
         try {
             List<Fact> existingFacts = listFacts(projectId);
@@ -731,6 +732,7 @@ public class CanonStorage extends BaseStorage {
                     continue;
                 }
                 for (Map<String, Object> existingEvent : existingEvents) {
+                    if (chapter.equals(existingEvent.get("source"))) continue;
                     String existingTime = normalizeText(stringValue(existingEvent, "time"));
                     if (!newTime.equals(existingTime)) {
                         continue;
@@ -774,6 +776,7 @@ public class CanonStorage extends BaseStorage {
                     continue;
                 }
                 Map<String, Object> previous = previousOpt.get();
+                if (chapter.equals(previous.get("last_seen"))) continue;
                 String oldLocation = normalizeText(stringValue(previous, "location"));
                 if (oldLocation.isBlank() || oldLocation.equals(newLocation)) {
                     continue;
@@ -792,6 +795,7 @@ public class CanonStorage extends BaseStorage {
                 }
             }
         } catch (Exception e) {
+            checkFailed = true;
             log.warn("detectConflicts 失败: {}", e.getMessage());
         }
 
@@ -799,7 +803,8 @@ public class CanonStorage extends BaseStorage {
         report.put("chapter", chapter);
         report.put("conflicts", conflicts);
         report.put("conflict_count", conflicts.size());
-        report.put("has_conflicts", !conflicts.isEmpty());
+        report.put("status", checkFailed ? "failed" : "complete");
+        report.put("has_conflicts", checkFailed && conflicts.isEmpty() ? null : !conflicts.isEmpty());
         report.put("generated_at", java.time.Instant.now().toString());
         return report;
     }

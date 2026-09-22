@@ -15,6 +15,7 @@ function reason(error: unknown, fallback: string): string {
 interface AnalysisPayload extends JsonRecord {
   summary?: JsonRecord;
   facts?: JsonRecord[];
+  pending_facts?: JsonRecord[];
   timeline_events?: JsonRecord[];
   character_states?: JsonRecord[];
 }
@@ -195,6 +196,14 @@ export function AnalyzeChapterDialog({
                 </ul>
               )}
             </CandidateSection>
+          )}
+          {(analysis?.pending_facts?.length ?? 0) > 0 && (
+            <details className="rounded-md border border-amber-200 bg-amber-50/50 p-3 text-xs">
+              <summary className="cursor-pointer">{analysis?.pending_facts?.length} 条事实待核实，暂不加入正典</summary>
+              <ul className="mt-2 space-y-2">
+                {analysis?.pending_facts?.map((fact, index) => <li key={index}>{String(fact.statement ?? '')}<span className="block text-ink-400">{String(fact.review_reason ?? '')}</span></li>)}
+              </ul>
+            </details>
           )}
           <CandidateList
             title="事实"

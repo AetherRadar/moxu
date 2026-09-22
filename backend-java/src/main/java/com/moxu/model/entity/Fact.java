@@ -29,4 +29,6 @@ public class Fact {
 
     @JsonProperty("origin")
     private String origin;
+    private String evidence;
+    private String certainty;
 }

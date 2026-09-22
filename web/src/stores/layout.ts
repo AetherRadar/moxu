@@ -39,7 +39,7 @@ const clamp = (value: number, min: number, max: number): number =>
 export const useLayoutStore = create<LayoutState>()(
   persist(
     (set, get) => ({
-      theme: 'dark',
+      theme: 'light',
       sideView: 'explorer',
       sideVisible: true,
       sideWidth: 288,
@@ -58,7 +58,9 @@ export const useLayoutStore = create<LayoutState>()(
     }),
     {
       name: 'moxu:layout',
-      version: 1,
+      version: 2,
+      // 新版以明亮纸张色为默认，升级时保留布局并重置旧的深色偏好。
+      migrate: (persisted) => ({ ...(persisted as Partial<LayoutState>), theme: 'light' as const }),
       storage: createJSONStorage(() => localStorage),
       // 宽度和面板选择值得记住，focusMode 每次进来都该是关的
       partialize: ({ theme, sideView, sideVisible, sideWidth }) => ({

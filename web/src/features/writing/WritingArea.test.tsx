@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 import { forwardRef, useImperativeHandle, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/lib/http';
 import { useWorkspaceStore } from '@/stores/workspace';
 import { WritingArea } from './WritingArea';
@@ -25,11 +25,21 @@ interface DraftQueryShape {
 }
 
 let draftResult: DraftQueryShape;
+const { autoMutate, directAutosave } = vi.hoisted(() => ({
+  autoMutate: vi.fn(),
+  directAutosave: vi.fn(() => Promise.resolve({})),
+}));
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+});
 
 vi.mock('@/features/writing/queries', () => ({
   useDraft: () => draftResult as unknown as UseQueryResult<Draft>,
-  useAutosaveDraft: () =>
-    ({ mutate: vi.fn(), isPending: false }) as unknown as UseMutationResult<unknown>,
+  useAutosaveDraft: () => ({ mutate: autoMutate, isPending: false }) as unknown as UseMutationResult<unknown>,
 }));
 
 vi.mock('@/features/chapters/queries', () => ({
@@ -50,9 +60,10 @@ vi.mock('@/features/chapters/queries', () => ({
 vi.mock('@/features/editor/CodeMirrorEditor', () => {
   let doc = '';
   const CodeMirrorEditor = forwardRef(function StubEditor(
-    _props: unknown,
+    props: { initialDoc: string; onDocChange?: (doc: string) => void },
     ref: React.Ref<unknown>,
   ): ReactNode {
+    doc = props.initialDoc;
     useImperativeHandle(ref, () => ({
       getDoc: () => doc,
       setDoc: (text: string) => {
@@ -65,7 +76,16 @@ vi.mock('@/features/editor/CodeMirrorEditor', () => {
       replaceRange: () => undefined,
       focus: () => undefined,
     }));
-    return <div data-testid="cm-stub" />;
+    return (
+      <textarea
+        data-testid="cm-stub"
+        defaultValue={props.initialDoc}
+        onChange={(event) => {
+          doc = event.target.value;
+          props.onDocChange?.(doc);
+        }}
+      />
+    );
   });
   return { CodeMirrorEditor };
 });
@@ -77,9 +97,8 @@ vi.mock('@/api', async (importOriginal) => {
     ...original,
     draftsApi: {
       ...original.draftsApi,
-      final: () =>
-        Promise.reject(new ApiError('not found', 404, '/drafts/x/final', undefined)),
-      autosave: () => Promise.resolve({}),
+      final: () => Promise.reject(new ApiError('not found', 404, '/drafts/x/final', undefined)),
+      autosave: directAutosave,
     },
   };
 });
@@ -131,5 +150,34 @@ describe('WritingArea', () => {
     };
     renderEditor();
     expect(await screen.findByTestId('cm-stub')).toBeTruthy();
+  });
+  it('debounces typing without cleanup requests and flushes the latest text on unmount', () => {
+    vi.useFakeTimers();
+    draftResult = { isPending: false, data: { content: '原文' } as Draft };
+    const view = renderEditor();
+    fireEvent.change(screen.getByTestId('cm-stub'), { target: { value: '第一笔' } });
+    act(() => vi.advanceTimersByTime(800));
+    fireEvent.change(screen.getByTestId('cm-stub'), { target: { value: '第二笔' } });
+    act(() => vi.advanceTimersByTime(1599));
+    expect(autoMutate).not.toHaveBeenCalled();
+    expect(directAutosave).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(1));
+    expect(autoMutate).toHaveBeenCalledTimes(1);
+    expect(autoMutate.mock.calls[0]![0].body.content).toBe('第二笔');
+    // An older response must not mark newer edits as saved.
+    fireEvent.change(screen.getByTestId('cm-stub'), { target: { value: '最新正文' } });
+    act(() => autoMutate.mock.calls[0]![1].onSuccess());
+    expect(screen.getByText('未保存')).toBeTruthy();
+    view.unmount();
+    expect(directAutosave).toHaveBeenCalledTimes(1);
+    expect(directAutosave).toHaveBeenCalledWith('p1', 'V1C1', { content: '最新正文', title: '序章' });
+  });
+
+  it('preserves loaded content when only the title changes before unmount', () => {
+    draftResult = { isPending: false, data: { content: '不能丢失的原文' } as Draft };
+    const view = renderEditor();
+    fireEvent.change(screen.getByLabelText('章节标题'), { target: { value: '新标题' } });
+    view.unmount();
+    expect(directAutosave).toHaveBeenCalledWith('p1', 'V1C1', { content: '不能丢失的原文', title: '新标题' });
   });
 });

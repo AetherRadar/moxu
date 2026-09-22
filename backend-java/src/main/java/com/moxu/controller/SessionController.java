@@ -93,6 +93,21 @@ public class SessionController {
         );
     }
     
+    @GetMapping("/archive/{chapter}")
+    public Map<String, Object> archiveStatus(@PathVariable String projectId, @PathVariable String chapter) throws java.io.IOException {
+        Map<String, Object> status = new LinkedHashMap<>(draftStorage.getArchiveStatus(projectId, chapter));
+        if ("running".equals(status.get("status")) && !orchestratorPool.getOrchestrator(projectId).isArchiving(chapter)) {
+            status.put("status", "partial");
+            status.put("message", "上一次归档已中断，重试会保留已完成步骤");
+        }
+        return status;
+    }
+
+    @PostMapping("/archive/{chapter}/retry")
+    public Map<String, Object> retryArchive(@PathVariable String projectId, @PathVariable String chapter) {
+        return orchestratorPool.getOrchestrator(projectId).retryArchive(projectId, chapter);
+    }
+
     /**
      * 编辑建议（差异修订）
      * POST /projects/{projectId}/session/edit-suggest

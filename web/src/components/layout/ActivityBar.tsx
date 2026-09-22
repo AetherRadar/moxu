@@ -42,7 +42,7 @@ export function ActivityBar({ onOpenSettings }: { onOpenSettings: () => void }):
   return (
     <nav
       aria-label="主导航"
-      className="flex w-11 shrink-0 flex-col items-center border-r border-ink-800 bg-ink-975 py-1.5"
+      className="flex w-[4.5rem] shrink-0 flex-col items-center border-r border-ink-800 bg-sidebar px-1.5 py-2 sm:w-20"
     >
       {ENTRIES.map((entry) => {
         const active = sideVisible && sideView === entry.view;
@@ -54,15 +54,18 @@ export function ActivityBar({ onOpenSettings }: { onOpenSettings: () => void }):
               aria-pressed={active}
               onClick={() => activateSideView(entry.view)}
               className={cn(
-                'relative flex size-9 items-center justify-center transition-colors duration-150',
+                'relative flex min-h-12 w-full flex-col items-center justify-center gap-1 rounded-md transition-[background-color,color,box-shadow] duration-150',
                 '[&_svg]:size-[18px]',
-                active ? 'text-celadon-300' : 'text-ink-500 hover:text-ink-200',
+                active
+                  ? 'bg-ink-900 text-celadon-300 shadow-sm'
+                  : 'text-ink-500 hover:bg-ink-850 hover:text-ink-200',
                 // 激活指示条放在左边缘，与面板同侧
-                'before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-r',
+                'before:absolute before:inset-y-2 before:left-0 before:w-0.5 before:rounded-r',
                 active ? 'before:bg-celadon-500' : 'before:bg-transparent',
               )}
             >
               {entry.icon}
+              <span className="text-[10px] leading-none tracking-wide">{entry.label}</span>
             </button>
           </Tooltip>
         );
@@ -75,7 +78,7 @@ export function ActivityBar({ onOpenSettings }: { onOpenSettings: () => void }):
           type="button"
           aria-label="切换深浅色"
           onClick={toggleTheme}
-          className="flex size-9 items-center justify-center text-ink-500 transition-colors hover:text-ink-200 [&_svg]:size-[18px]"
+          className="flex size-10 items-center justify-center rounded-md text-ink-500 transition-colors hover:bg-ink-850 hover:text-ink-200 [&_svg]:size-[18px]"
         >
           <SunMoon />
         </button>
@@ -85,7 +88,7 @@ export function ActivityBar({ onOpenSettings }: { onOpenSettings: () => void }):
           type="button"
           aria-label="设置"
           onClick={onOpenSettings}
-          className="flex size-9 items-center justify-center text-ink-500 transition-colors hover:text-ink-200 [&_svg]:size-[18px]"
+          className="flex size-10 items-center justify-center rounded-md text-ink-500 transition-colors hover:bg-ink-850 hover:text-ink-200 [&_svg]:size-[18px]"
         >
           <Settings />
         </button>

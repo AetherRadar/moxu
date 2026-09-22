@@ -25,7 +25,7 @@ export function Panel({
 }): ReactNode {
   return (
     <section className={cn('flex h-full min-h-0 flex-col', className)}>
-      <header className="flex h-8 shrink-0 items-center gap-1 border-b border-ink-800 pr-1 pl-3">
+      <header className="flex h-10 shrink-0 items-center gap-1 border-b border-ink-800 bg-ink-975/55 pr-2 pl-4">
         <h2 className="flex-1 truncate text-2xs font-semibold tracking-wide text-ink-400 uppercase">
           {title}
         </h2>

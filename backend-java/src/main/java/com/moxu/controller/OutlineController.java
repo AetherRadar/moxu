@@ -516,8 +516,11 @@ public class OutlineController {
                     ),
                     llmGateway.getProviderForAgent("writer"),
                     0.45,
-                    3200
+                    null
             );
+            if ("length".equals(response.getFinishReason()) || "incomplete".equals(response.getFinishReason())) {
+                throw new IllegalStateException("Model output was truncated: " + response.getFinishReason());
+            }
             String raw = response.getContent() != null ? response.getContent().trim() : "";
             MasterOutlineCandidateParseResult parsed = parseMasterOutlineCandidates(
                     projectName,
@@ -531,28 +534,14 @@ public class OutlineController {
             candidates = parsed.candidates();
             recommendedRouteId = parsed.recommendedRouteId();
         } catch (Exception e) {
-            log.warn("生成总纲候选失败，使用回退候选: project={}, reason={}", projectId, e.getMessage());
-            candidates = fallbackMasterOutlineCandidates(
-                    projectName,
-                    currentMasterContent,
-                    volumeOverview,
-                    recentChapterOverview,
-                    instruction,
-                    language
-            );
-            recommendedRouteId = candidates.isEmpty() ? "" : candidates.get(0).routeId();
+            log.warn("生成总纲候选失败: project={}, reason={}", projectId, e.getMessage());
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_GATEWAY,
+                    "AI 总纲生成失败或输出不完整，请检查模型连接与输出上限后重试", e);
         }
-
         if (candidates.isEmpty()) {
-            candidates = fallbackMasterOutlineCandidates(
-                    projectName,
-                    currentMasterContent,
-                    volumeOverview,
-                    recentChapterOverview,
-                    instruction,
-                    language
-            );
-            recommendedRouteId = candidates.isEmpty() ? "" : candidates.get(0).routeId();
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_GATEWAY, "AI 未返回可用的总纲候选");
         }
 
         Map<String, Object> result = new LinkedHashMap<>();
@@ -618,8 +607,11 @@ public class OutlineController {
                     ),
                     llmGateway.getProviderForAgent("writer"),
                     0.45,
-                    3200
+                    null
             );
+            if ("length".equals(response.getFinishReason()) || "incomplete".equals(response.getFinishReason())) {
+                throw new IllegalStateException("Model output was truncated: " + response.getFinishReason());
+            }
             String raw = response.getContent() != null ? response.getContent().trim() : "";
             VolumeOutlineCandidateParseResult parsed = parseVolumeOutlineCandidates(
                     canonicalVolumeId,
@@ -633,28 +625,14 @@ public class OutlineController {
             candidates = parsed.candidates();
             recommendedRouteId = parsed.recommendedRouteId();
         } catch (Exception e) {
-            log.warn("生成分卷纲候选失败，使用回退候选: project={}, volumeId={}, reason={}", projectId, canonicalVolumeId, e.getMessage());
-            candidates = fallbackVolumeOutlineCandidates(
-                    canonicalVolumeId,
-                    volumeTitle,
-                    masterContent,
-                    currentVolumeContent,
-                    instruction,
-                    language
-            );
-            recommendedRouteId = candidates.isEmpty() ? "" : candidates.get(0).routeId();
+            log.warn("生成分卷纲候选失败: project={}, reason={}", projectId, e.getMessage());
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_GATEWAY,
+                    "AI 分卷纲生成失败或输出不完整，请检查模型连接与输出上限后重试", e);
         }
-
         if (candidates.isEmpty()) {
-            candidates = fallbackVolumeOutlineCandidates(
-                    canonicalVolumeId,
-                    volumeTitle,
-                    masterContent,
-                    currentVolumeContent,
-                    instruction,
-                    language
-            );
-            recommendedRouteId = candidates.isEmpty() ? "" : candidates.get(0).routeId();
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_GATEWAY, "AI 未返回可用的分卷纲候选");
         }
 
         Map<String, Object> result = new LinkedHashMap<>();
@@ -676,6 +654,16 @@ public class OutlineController {
                                                   @RequestBody(required = false) Map<String, Object> body) {
         String canonicalVolumeId = canonicalizeVolumeId(volumeId);
         Map<String, Object> requestBody = body != null ? body : Map.of();
+        JsonNode range = objectMapper.valueToTree(requestBody);
+        boolean bounded = range.has("chapter_count");
+        int startChapter = range.path("start_chapter").asInt(1);
+        int chapterCount = range.path("chapter_count").asInt(0);
+        if (bounded && ((!range.path("chapter_count").isIntegralNumber())
+                || (range.has("start_chapter") && !range.path("start_chapter").isIntegralNumber())
+                || startChapter < 1 || startChapter > 9999 || chapterCount < 1 || chapterCount > 20)) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST, "章节起点须为 1–9999，规划章数须为 1–20 的整数");
+        }
         String language = resolveOutlineLanguage(projectId, (String) requestBody.get("language"));
         String providedContent = Objects.toString(requestBody.getOrDefault("content", ""), "").trim();
 
@@ -703,15 +691,31 @@ public class OutlineController {
         try {
             String systemPrompt = buildVolumeSplitSystemPrompt(language);
             String userPrompt = buildVolumeSplitUserPrompt(language, canonicalVolumeId, volumeTitle, masterContent, volumeContent);
+            if (bounded) {
+                userPrompt += "\n\n[Required chapter range] Generate ONLY chapters " + startChapter
+                        + " through " + (startChapter + chapterCount - 1) + ", exactly " + chapterCount
+                        + " entries. Keep these chapter_no values. Do not compress later plot into this range."
+                        + " Keep each chapter concise (about 250 Chinese characters across its fields).";
+            }
             List<Map<String, String>> messages = List.of(
                     Map.of("role", "system", "content", systemPrompt),
                     Map.of("role", "user", "content", userPrompt)
             );
             String rawResponse = requestVolumeSplitResponse(messages);
             chapters = parsePlannedChapters(canonicalVolumeId, rawResponse, volumeContent, language);
+            if (bounded) {
+                if (chapters.size() != chapterCount) throw new IOException("chapter range is incomplete");
+                for (int i = 0; i < chapters.size(); i++) {
+                    if (chapters.get(i).chapterNo() != startChapter + i) {
+                        throw new IOException("model returned unexpected chapter numbers");
+                    }
+                }
+            }
         } catch (Exception e) {
-            log.warn("分卷自动拆章失败，使用回退解析: project={}, volumeId={}, reason={}", projectId, canonicalVolumeId, e.getMessage());
-            chapters = fallbackPlannedChapters(canonicalVolumeId, volumeContent, language);
+            log.warn("分卷自动拆章失败: project={}, volumeId={}, reason={}", projectId, canonicalVolumeId, e.getMessage());
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_GATEWAY,
+                    "AI 章节规划失败或输出不完整，请检查模型连接与输出上限后重试", e);
         }
 
         if (chapters.isEmpty()) {
@@ -879,7 +883,7 @@ public class OutlineController {
                 .sum();
 
         try {
-            String streamed = llmGateway.streamChat(messages, providerId, 0.4, 3200)
+            String streamed = llmGateway.streamChat(messages, providerId, 0.4, null)
                     .collectList()
                     .map(parts -> String.join("", parts))
                     .block(Duration.ofMinutes(8));
@@ -898,10 +902,11 @@ public class OutlineController {
                 messages,
                 providerId,
                 0.4,
-                3200
+                null
         );
         String content = response.getContent() != null ? response.getContent().trim() : "";
-        if (content.isBlank()) {
+        if (content.isBlank() || "length".equals(response.getFinishReason())
+                || "incomplete".equals(response.getFinishReason())) {
             throw new IllegalStateException("empty chapter plan content");
         }
         log.info("分卷自动拆章同步完成: provider={}, promptChars={}, outputChars={}",
@@ -984,7 +989,14 @@ public class OutlineController {
             summary.setBriefSummary(chapter.summary());
             draftStorage.saveChapterSummary(projectId, summary);
 
-            writeOutlineYaml(projectId, "chapters/" + chapterId + ".yaml", chapter.outlineContent());
+            String executableOutline = buildOutlineContent(language, chapter.title(), chapter.summary(),
+                    chapter.goal(), chapter.keyBeats(), chapter.endingHook(), chapter.mustNotInclude());
+            String extraOutline = chapter.outlineContent().trim();
+            if (!extraOutline.isBlank() && !executableOutline.equals(extraOutline)) {
+                executableOutline = extraOutline.startsWith(executableOutline) ? extraOutline
+                        : executableOutline + "\n\n" + extraOutline;
+            }
+            writeOutlineYaml(projectId, "chapters/" + chapterId + ".yaml", executableOutline);
 
             if (existed) {
                 updated.add(chapterId);
@@ -1335,24 +1347,11 @@ public class OutlineController {
                                                                            String instruction,
                                                                            String raw,
                                                                            String language) throws IOException {
-        if (raw == null || raw.isBlank()) {
-            List<MasterOutlineCandidate> fallback = fallbackMasterOutlineCandidates(
-                    projectName, currentMasterContent, volumeOverview, recentChapterOverview, instruction, language);
-            return new MasterOutlineCandidateParseResult(
-                    fallback,
-                    fallback.isEmpty() ? "" : fallback.get(0).routeId()
-            );
-        }
-
+        if (raw == null || raw.isBlank()) throw new IOException("Empty model output");
         JsonNode root = extractJsonNode(raw);
         JsonNode candidatesNode = root.path("candidates");
         if (!candidatesNode.isArray() || candidatesNode.isEmpty()) {
-            List<MasterOutlineCandidate> fallback = fallbackMasterOutlineCandidates(
-                    projectName, currentMasterContent, volumeOverview, recentChapterOverview, instruction, language);
-            return new MasterOutlineCandidateParseResult(
-                    fallback,
-                    fallback.isEmpty() ? "" : fallback.get(0).routeId()
-            );
+            throw new IOException("Model did not return outline candidates");
         }
 
         List<MasterOutlineCandidate> candidates = new ArrayList<>();
@@ -1807,24 +1806,11 @@ public class OutlineController {
                                                                            String currentVolumeContent,
                                                                            String instruction,
                                                                            String language) throws IOException {
-        if (raw == null || raw.isBlank()) {
-            List<VolumeOutlineCandidate> fallback = fallbackVolumeOutlineCandidates(
-                    volumeId, volumeTitle, masterContent, currentVolumeContent, instruction, language);
-            return new VolumeOutlineCandidateParseResult(
-                    fallback,
-                    fallback.isEmpty() ? "" : fallback.get(0).routeId()
-            );
-        }
-
+        if (raw == null || raw.isBlank()) throw new IOException("Empty model output");
         JsonNode root = extractJsonNode(raw);
         JsonNode candidatesNode = root.path("candidates");
         if (!candidatesNode.isArray() || candidatesNode.isEmpty()) {
-            List<VolumeOutlineCandidate> fallback = fallbackVolumeOutlineCandidates(
-                    volumeId, volumeTitle, masterContent, currentVolumeContent, instruction, language);
-            return new VolumeOutlineCandidateParseResult(
-                    fallback,
-                    fallback.isEmpty() ? "" : fallback.get(0).routeId()
-            );
+            throw new IOException("Model did not return outline candidates");
         }
 
         List<VolumeOutlineCandidate> candidates = new ArrayList<>();
@@ -4438,12 +4424,12 @@ public class OutlineController {
                                                       String volumeContent,
                                                       String language) throws IOException {
         if (raw == null || raw.isBlank()) {
-            return fallbackPlannedChapters(volumeId, volumeContent, language);
+            throw new IOException("empty chapter plan response");
         }
         JsonNode root = extractJsonNode(raw);
         JsonNode chaptersNode = root.path("chapters");
         if (!chaptersNode.isArray() || chaptersNode.isEmpty()) {
-            return fallbackPlannedChapters(volumeId, volumeContent, language);
+            throw new IOException("no chapters in model response");
         }
 
         List<PlannedChapter> chapters = new ArrayList<>();

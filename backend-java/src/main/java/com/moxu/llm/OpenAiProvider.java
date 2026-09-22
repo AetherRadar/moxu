@@ -35,6 +35,7 @@ public class OpenAiProvider implements LlmProvider {
     private final int maxTokens;
     private final double temperature;
     private final OkHttpClient httpClient;
+    private final boolean compatibilityMode;
 
     private final String providerName;
 
@@ -44,6 +45,11 @@ public class OpenAiProvider implements LlmProvider {
 
     public OpenAiProvider(String apiKey, String baseUrl, String model, int maxTokens, double temperature,
                           String providerName) {
+        this(apiKey, baseUrl, model, maxTokens, temperature, providerName, false);
+    }
+
+    public OpenAiProvider(String apiKey, String baseUrl, String model, int maxTokens, double temperature,
+                          String providerName, boolean compatibilityMode) {
         this.apiKey = apiKey;
         this.baseUrl = (baseUrl != null ? baseUrl : "https://api.openai.com/v1")
                 .replaceAll("/+$", "");
@@ -51,9 +57,10 @@ public class OpenAiProvider implements LlmProvider {
         this.maxTokens = maxTokens > 0 ? maxTokens : 8000;
         this.temperature = temperature;
         this.providerName = (providerName != null && !providerName.isBlank()) ? providerName : "openai";
+        this.compatibilityMode = compatibilityMode;
 
         this.httpClient = new OkHttpClient.Builder()
-                .protocols(List.of(Protocol.HTTP_2, Protocol.HTTP_1_1))
+                .protocols(compatibilityMode ? List.of(Protocol.HTTP_1_1) : List.of(Protocol.HTTP_2, Protocol.HTTP_1_1))
                 .retryOnConnectionFailure(false)
                 .connectTimeout(30, TimeUnit.SECONDS)
                 .readTimeout(5, TimeUnit.MINUTES)
@@ -76,7 +83,7 @@ public class OpenAiProvider implements LlmProvider {
         long startTime = System.currentTimeMillis();
         double actualTemp = temperature != null ? temperature : this.temperature;
         int actualMaxTokens = maxTokens != null ? maxTokens : this.maxTokens;
-        java.util.function.Supplier<OkHttpClient> transport = allowReasoningRetry
+        java.util.function.Supplier<OkHttpClient> transport = allowReasoningRetry && !compatibilityMode
                 ? () -> httpClient : this::singleRequestClient;
 
         try {
@@ -137,6 +144,19 @@ public class OpenAiProvider implements LlmProvider {
 
         Thread.ofVirtual().start(() -> {
             try {
+                if (compatibilityMode) {
+                    // 不支持流式的中转接口整次返回；不自动重试，避免重复计费。
+                    LlmResponse response = chatOnce(messages, temperature, maxTokens);
+                    if ("length".equals(response.getFinishReason())
+                            || "incomplete".equals(response.getFinishReason())) {
+                        throw new IOException("Model output is incomplete; increase the output token limit");
+                    }
+                    if (response.getContent() != null && !response.getContent().isEmpty()) {
+                        sink.tryEmitNext(response.getContent());
+                    }
+                    sink.tryEmitComplete();
+                    return;
+                }
                 String requestBody = buildRequestBody(messages,
                         temperature != null ? temperature : this.temperature,
                         maxTokens != null ? maxTokens : this.maxTokens,
@@ -355,7 +375,7 @@ public class OpenAiProvider implements LlmProvider {
                                            OkHttpClient transport, String url) throws IOException {
         // 用流式请求保活：网关在 Cloudflare 等代理后时，长生成超过约 100s 的空闲
         // 非流式请求会被掐断（524/EOF）。服务端忽略 stream 时仍能按普通 JSON 解析。
-        String requestBody = buildRequestBody(messages, temp, maxTokens, true);
+        String requestBody = buildRequestBody(messages, temp, maxTokens, !compatibilityMode);
 
         Request request = new Request.Builder()
                 .url(url)
@@ -696,7 +716,8 @@ public class OpenAiProvider implements LlmProvider {
             throws IOException {
         ObjectNode root = MAPPER.createObjectNode();
         root.put("model", model);
-        root.put("temperature", temp);
+        // 某些兼容网关带 temperature 会直接断开；兼容模式使用模型默认采样参数。
+        if (!compatibilityMode) root.put("temperature", temp);
         root.put("max_tokens", maxTok);
         root.put("stream", stream);
 

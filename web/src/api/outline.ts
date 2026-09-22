@@ -95,7 +95,12 @@ export const outlineApi = {
       signal,
     }),
 
-  generateVolumeCandidates: (projectId: string, volumeId: string, body?: OutlineCandidateRequest, signal?: AbortSignal) =>
+  generateVolumeCandidates: (
+    projectId: string,
+    volumeId: string,
+    body?: OutlineCandidateRequest,
+    signal?: AbortSignal,
+  ) =>
     http.post<CandidateResponse>(`${base(projectId)}/volumes/${seg(volumeId)}/generate-candidates`, {
       body: body ?? {},
       timeout: Timeout.batch,
@@ -103,9 +108,15 @@ export const outlineApi = {
     }),
 
   /** 把分卷纲拆成章节规划。 */
-  planChapters: (projectId: string, volumeId: string, content?: string, signal?: AbortSignal) =>
+  planChapters: (
+    projectId: string,
+    volumeId: string,
+    content?: string,
+    signal?: AbortSignal,
+    range?: { start_chapter: number; chapter_count: number },
+  ) =>
     http.post<ChapterPlanResult>(`${base(projectId)}/volumes/${seg(volumeId)}/plan-chapters`, {
-      body: content === undefined ? {} : { content },
+      body: { ...(content === undefined ? {} : { content }), ...range },
       timeout: Timeout.batch,
       signal,
     }),
@@ -139,7 +150,12 @@ export const outlineApi = {
       signal,
     }),
 
-  answerExploration: (projectId: string, sessionId: string, answers: ExplorationAnswer[], signal?: AbortSignal) =>
+  answerExploration: (
+    projectId: string,
+    sessionId: string,
+    answers: ExplorationAnswer[],
+    signal?: AbortSignal,
+  ) =>
     http.post<ExplorationResponse>(`${base(projectId)}/exploration/answer`, {
       body: { session_id: sessionId, answers },
       timeout: Timeout.llm,

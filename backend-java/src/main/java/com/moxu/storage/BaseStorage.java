@@ -36,7 +36,7 @@ public abstract class BaseStorage {
     protected final ObjectMapper yamlMapper;
     protected final ObjectMapper jsonMapper;
     
-    @Value("${Moxu.data-dir:../data}")
+    @Value("${moxu.data-dir:../data}")
     protected String dataDir;
     
     /**

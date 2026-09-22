@@ -30,7 +30,7 @@ export function StatusBar({
         : { tone: 'danger' as const, text: '后端未连接', pulse: false };
 
   return (
-    <footer className="flex h-[22px] shrink-0 items-center gap-3 border-t border-ink-800 bg-ink-975 px-2 text-2xs text-ink-500">
+    <footer className="flex h-7 shrink-0 items-center gap-3 border-t border-ink-800 bg-ink-975 px-3 text-2xs text-ink-500 sm:px-5">
       <span className="flex items-center gap-1.5">
         <Dot tone={connection.tone} pulse={connection.pulse} />
         <span className={cn(status !== 'open' && 'text-ink-300')}>{connection.text}</span>

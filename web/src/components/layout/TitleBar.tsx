@@ -16,12 +16,13 @@ export function TitleBar({
   actions?: ReactNode;
 }): ReactNode {
   return (
-    <header className="flex h-9 shrink-0 items-center gap-2 border-b border-ink-800 bg-ink-975 px-2">
-      <span className="flex shrink-0 items-center gap-1.5 pr-1">
-        <Logo />
-        <span className="font-serif text-sm tracking-wide text-ink-200">墨序</span>
+    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-ink-800 bg-ink-975 px-3 sm:px-5">
+      <span className="flex shrink-0 items-center gap-2 pr-1">
+        <Logo size={24} />
+        <span className="font-serif text-base tracking-[0.12em] text-ink-100">墨序</span>
       </span>
 
+      <div className="h-5 w-px shrink-0 bg-ink-800" />
       <div className="flex min-w-0 flex-1 items-center gap-1.5">{breadcrumb}</div>
 
       {center !== undefined && <div className="shrink-0">{center}</div>}

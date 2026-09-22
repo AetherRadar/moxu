@@ -1,5 +1,5 @@
-import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
-import { EditorState, type Extension } from '@codemirror/state';
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
+import { Compartment, EditorState, type Extension } from '@codemirror/state';
 import {
   EditorView,
   drawSelection,
@@ -11,6 +11,23 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirro
 import { highlightSelectionMatches, searchKeymap } from '@codemirror/search';
 import { cn } from '@/lib/cn';
 import { useLayoutStore } from '@/stores/layout';
+import { useWritingPreferences, type WritingAppearance } from '@/stores/writing-preferences';
+
+function appearanceTheme(appearance: WritingAppearance, dark: boolean): Extension {
+  const halfWidth = { compact: 16, comfortable: 20, wide: 26 }[appearance.width];
+  return EditorView.theme(
+    {
+      '&': { fontSize: `${appearance.fontSize}px` },
+      '.cm-content': {
+        fontFamily: `var(--font-${appearance.font})`,
+        lineHeight: String(appearance.lineHeight),
+        paddingInline: `max(1.5rem, calc(50% - ${halfWidth}em))`,
+      },
+      '.cm-scroller': { fontFamily: `var(--font-${appearance.font})` },
+    },
+    { dark },
+  );
+}
 
 export interface EditorSelection {
   from: number;
@@ -60,6 +77,9 @@ export const CodeMirrorEditor = forwardRef<
   const viewRef = useRef<EditorView | null>(null);
   // dark 标志影响 CM 内部配色（选区/光标兜底），跟随全局主题
   const theme = useLayoutStore((state) => state.theme);
+  const appearance = useWritingPreferences((state) => state.appearance);
+  const [themeCompartment] = useState(() => new Compartment());
+  const [readOnlyCompartment] = useState(() => new Compartment());
 
   // 回调放 ref：父组件每次渲染的新函数不该触发编辑器重建
   const onDocChangeRef = useRef(onDocChange);
@@ -78,59 +98,56 @@ export const CodeMirrorEditor = forwardRef<
       EditorView.lineWrapping,
       keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
       highlightSelectionMatches(),
-      EditorState.readOnly.of(readOnly),
-      EditorView.theme(
-        {
-          '&': {
-            height: '100%',
-            fontSize: '1.0625rem',
-            backgroundColor: 'transparent',
-          },
-          '.cm-content': {
-            fontFamily: 'var(--font-serif)',
-            lineHeight: 'var(--prose-leading)',
-            letterSpacing: '0.01em',
-            padding: '1.5rem 0 40vh 0',
-            caretColor: 'var(--color-celadon-400)',
-            // 中文阅读舒服的行宽；居中靠 padding 而不是 max-width，
-            // 否则光标定位和选区高亮会在宽屏下偏移
-            paddingInline: 'max(2rem, calc(50% - 24em))',
-          },
-          '.cm-scroller': {
-            overflow: 'auto',
-            fontFamily: 'var(--font-serif)',
-          },
-          '.cm-line': { paddingInline: '0.125rem' },
-          '&.cm-focused': { outline: 'none' },
-          '.cm-gutters': {
-            backgroundColor: 'transparent',
-            border: 'none',
-          },
-          '.cm-activeLine': {
-            backgroundColor: 'color-mix(in oklch, var(--color-ink-850) 55%, transparent)',
-          },
-          '.cm-selectionMatch': {
-            backgroundColor: 'color-mix(in oklch, var(--color-gamboge-500) 22%, transparent)',
-          },
-          '.cm-searchMatch': {
-            backgroundColor: 'color-mix(in oklch, var(--color-celadon-600) 35%, transparent)',
-          },
-          '.cm-searchMatch-selected': {
-            backgroundColor: 'color-mix(in oklch, var(--color-celadon-500) 50%, transparent)',
-          },
-          '.cm-panels': {
-            backgroundColor: 'var(--color-ink-900)',
-            color: 'var(--color-ink-200)',
-            borderColor: 'var(--color-ink-800)',
-          },
-          '.cm-panels input, .cm-panels button': {
-            fontFamily: 'var(--font-sans)',
-            fontSize: '0.75rem',
-          },
-          '.cm-placeholder': { color: 'var(--color-ink-600)' },
+      readOnlyCompartment.of(EditorState.readOnly.of(readOnly)),
+      themeCompartment.of(appearanceTheme(appearance, theme === 'dark')),
+      EditorView.theme({
+        '&': {
+          height: '100%',
+          backgroundColor: 'var(--color-paper)',
+          color: 'var(--color-editor-ink)',
         },
-        { dark: theme === 'dark' },
-      ),
+        '.cm-content': {
+          letterSpacing: '0.025em',
+          padding: '2.75rem 0 40vh 0',
+          caretColor: 'var(--color-celadon-400)',
+          // 中文阅读舒服的行宽；居中靠 padding 而不是 max-width，
+          // 否则光标定位和选区高亮会在宽屏下偏移
+        },
+        '.cm-scroller': {
+          overflow: 'auto',
+        },
+        '.cm-line': { paddingInline: '0.125rem' },
+        '&.cm-focused': { outline: 'none' },
+        '.cm-gutters': {
+          backgroundColor: 'transparent',
+          border: 'none',
+        },
+        '.cm-activeLine': {
+          backgroundColor: 'transparent',
+        },
+        '&.cm-focused .cm-activeLine': {
+          backgroundColor: 'color-mix(in oklch, var(--color-ink-850) 28%, transparent)',
+        },
+        '.cm-selectionMatch': {
+          backgroundColor: 'color-mix(in oklch, var(--color-gamboge-500) 22%, transparent)',
+        },
+        '.cm-searchMatch': {
+          backgroundColor: 'color-mix(in oklch, var(--color-celadon-600) 35%, transparent)',
+        },
+        '.cm-searchMatch-selected': {
+          backgroundColor: 'color-mix(in oklch, var(--color-celadon-500) 50%, transparent)',
+        },
+        '.cm-panels': {
+          backgroundColor: 'var(--color-ink-900)',
+          color: 'var(--color-ink-200)',
+          borderColor: 'var(--color-ink-800)',
+        },
+        '.cm-panels input, .cm-panels button': {
+          fontFamily: 'var(--font-sans)',
+          fontSize: '0.75rem',
+        },
+        '.cm-placeholder': { color: 'var(--color-ink-600)' },
+      }),
       EditorView.updateListener.of((update) => {
         if (update.docChanged) {
           onDocChangeRef.current?.(update.state.doc.toString());
@@ -157,10 +174,18 @@ export const CodeMirrorEditor = forwardRef<
       view.destroy();
       viewRef.current = null;
     };
-    // 重建依据只有 docId 和主题：readOnly/回调变化不值得换整个文档视图；
-    // 切主题会丢一次撤销栈，属可接受代价
+    // 只有文档标识变化才重建；主题和只读模式用 Compartment 增量更新。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [docId, theme]);
+  }, [docId]);
+
+  useEffect(() => {
+    viewRef.current?.dispatch({
+      effects: [
+        themeCompartment.reconfigure(appearanceTheme(appearance, theme === 'dark')),
+        readOnlyCompartment.reconfigure(EditorState.readOnly.of(readOnly)),
+      ],
+    });
+  }, [docId, theme, appearance, readOnly, themeCompartment, readOnlyCompartment]);
 
   useImperativeHandle(
     ref,

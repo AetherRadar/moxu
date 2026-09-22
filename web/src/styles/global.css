@@ -8,37 +8,34 @@
      正文用衬线，中文长文阅读更省力；UI 用无衬线；代码/差异用等宽。
      全部走系统字体栈，不打包字体文件，首屏没有 FOIT。 */
   --font-sans:
-    'Inter var', 'Inter', system-ui, -apple-system, 'Segoe UI Variable Text', 'Segoe UI',
-    'PingFang SC', 'HarmonyOS Sans SC', 'Microsoft YaHei UI', 'Noto Sans SC', sans-serif;
+    'Inter var', 'Inter', system-ui, -apple-system, 'Segoe UI Variable Text', 'Segoe UI', 'PingFang SC',
+    'HarmonyOS Sans SC', 'Microsoft YaHei UI', 'Noto Sans SC', sans-serif;
   --font-serif:
-    'Source Han Serif SC', 'Noto Serif SC', 'Songti SC', 'STSong', 'SimSun', Georgia,
-    'Times New Roman', serif;
-  --font-mono:
-    'JetBrains Mono', 'Cascadia Code', 'SF Mono', 'Sarasa Mono SC', Consolas, monospace;
+    'Source Han Serif SC', 'Noto Serif SC', 'Songti SC', 'STSong', 'SimSun', Georgia, 'Times New Roman', serif;
+  --font-mono: 'JetBrains Mono', 'Cascadia Code', 'SF Mono', 'Sarasa Mono SC', Consolas, monospace;
 
-  /* ── 墨色阶（中性）──────────────────────────────────────
-     不用纯黑，用带一点青蓝的炭墨色，长时间盯屏不刺眼。 */
-  --color-ink-50: oklch(0.977 0.003 247);
-  --color-ink-100: oklch(0.945 0.005 247);
-  --color-ink-200: oklch(0.885 0.007 247);
-  --color-ink-300: oklch(0.78 0.009 247);
-  --color-ink-400: oklch(0.645 0.011 247);
-  --color-ink-500: oklch(0.53 0.013 247);
-  --color-ink-600: oklch(0.43 0.014 247);
-  --color-ink-700: oklch(0.345 0.014 247);
-  --color-ink-800: oklch(0.265 0.013 247);
-  --color-ink-850: oklch(0.22 0.012 247);
-  --color-ink-900: oklch(0.182 0.011 247);
-  --color-ink-950: oklch(0.142 0.01 247);
-  --color-ink-975: oklch(0.112 0.009 247);
+  /* 夜间备用色阶；默认浅色使用象牙纸、燕麦灰与石墨正文。 */
+  --color-ink-50: #fff9ed;
+  --color-ink-100: #f5ead5;
+  --color-ink-200: #e5d5b8;
+  --color-ink-300: #cdbb9b;
+  --color-ink-400: #b19c7d;
+  --color-ink-500: #a79172;
+  --color-ink-600: #7e694f;
+  --color-ink-700: #5e4c38;
+  --color-ink-800: #433628;
+  --color-ink-850: #342a20;
+  --color-ink-900: #29231c;
+  --color-ink-950: #211c16;
+  --color-ink-975: #191611;
 
-  /* ── 主色：青瓷（操作/选中）───────────────────────────── */
-  --color-celadon-300: oklch(0.86 0.062 178);
-  --color-celadon-400: oklch(0.782 0.088 178);
-  --color-celadon-500: oklch(0.7 0.104 178);
-  --color-celadon-600: oklch(0.6 0.096 178);
-  --color-celadon-700: oklch(0.49 0.078 178);
-  --color-celadon-900: oklch(0.31 0.05 178);
+  /* 沿用既有主色 token；浅色主题中作为低饱和陶土色点缀。 */
+  --color-celadon-300: #f5d795;
+  --color-celadon-400: #edc36f;
+  --color-celadon-500: #dfab4e;
+  --color-celadon-600: #d59935;
+  --color-celadon-700: #99702c;
+  --color-celadon-900: #4b391c;
 
   /* ── 强调：朱砂（删除/危险/未保存）──────────────────── */
   --color-cinnabar-300: oklch(0.82 0.1 27);
@@ -64,6 +61,13 @@
   --color-surface-raised: var(--color-ink-850);
   --color-edge: var(--color-ink-800);
   --color-accent: var(--color-celadon-500);
+  --color-action: var(--color-celadon-600);
+  --color-action-hover: var(--color-celadon-500);
+  --color-action-foreground: var(--color-ink-950);
+  --color-paper: var(--color-ink-950);
+  --color-sidebar: var(--color-ink-900);
+  --color-chrome: var(--color-ink-975);
+  --color-editor-ink: var(--color-ink-100);
 
   /* ── 排版节奏 ───────────────────────────────────────── */
   --text-2xs: 0.6875rem;
@@ -113,27 +117,35 @@
      强调色同步翻转：浅阶变深（文字可辨），深阶变浅（选中底色）。 */
   html.light {
     color-scheme: light;
+    --color-action: #b96645;
+    --color-action-hover: #a95538;
+    --color-action-foreground: #fffaf2;
+    --color-paper: #fffaf0;
+    --color-sidebar: #f3eadb;
+    --color-chrome: #eee2cf;
+    --color-editor-ink: #3e3028;
 
-    --color-ink-975: oklch(0.985 0.004 247);
-    --color-ink-950: oklch(0.968 0.005 247);
-    --color-ink-900: oklch(0.945 0.007 247);
-    --color-ink-850: oklch(0.92 0.008 247);
-    --color-ink-800: oklch(0.865 0.009 247);
-    --color-ink-700: oklch(0.775 0.011 247);
-    --color-ink-600: oklch(0.62 0.013 247);
-    --color-ink-500: oklch(0.53 0.013 247);
-    --color-ink-400: oklch(0.45 0.013 247);
-    --color-ink-300: oklch(0.36 0.013 247);
-    --color-ink-200: oklch(0.27 0.012 247);
-    --color-ink-100: oklch(0.21 0.011 247);
-    --color-ink-50: oklch(0.15 0.01 247);
+    --color-ink-975: #eee2cf;
+    --color-ink-950: #fffaf0;
+    --color-ink-900: #fffdf8;
+    --color-ink-850: #f5ecde;
+    --color-ink-800: #e5d8c6;
+    --color-ink-700: #d0bfa9;
+    --color-ink-600: #9a8875;
+    --color-ink-500: #7d6b5b;
+    --color-ink-400: #6a5849;
+    --color-ink-300: #564438;
+    --color-ink-200: #45352c;
+    --color-ink-100: #382a23;
+    --color-ink-50: #2e241f;
 
-    --color-celadon-300: oklch(0.42 0.09 178);
-    --color-celadon-400: oklch(0.5 0.1 178);
-    --color-celadon-500: oklch(0.58 0.1 178);
-    --color-celadon-600: oklch(0.68 0.09 178);
-    --color-celadon-700: oklch(0.8 0.06 178);
-    --color-celadon-900: oklch(0.92 0.045 178);
+    /* 主色在浅色界面中使用陶土红，保留暖黄、鼠尾草、灰蓝作功能分层。 */
+    --color-celadon-300: #8d4f39;
+    --color-celadon-400: #a45d42;
+    --color-celadon-500: #bb6a48;
+    --color-celadon-600: #ce8c69;
+    --color-celadon-700: #e1bda4;
+    --color-celadon-900: #f4e2d7;
 
     --color-cinnabar-300: oklch(0.48 0.14 27);
     --color-cinnabar-400: oklch(0.54 0.17 27);
@@ -141,16 +153,16 @@
     --color-cinnabar-600: oklch(0.7 0.14 27);
     --color-cinnabar-900: oklch(0.93 0.05 27);
 
-    --color-gamboge-300: oklch(0.48 0.11 80);
-    --color-gamboge-400: oklch(0.55 0.12 78);
-    --color-gamboge-500: oklch(0.64 0.13 75);
-    --color-gamboge-900: oklch(0.94 0.045 80);
+    --color-gamboge-300: #8d641e;
+    --color-gamboge-400: #a97625;
+    --color-gamboge-500: #c08d35;
+    --color-gamboge-900: #f5e7bf;
 
-    --color-malachite-400: oklch(0.48 0.13 150);
-    --color-malachite-500: oklch(0.56 0.14 150);
-    --color-malachite-900: oklch(0.93 0.045 150);
+    --color-malachite-400: #54735d;
+    --color-malachite-500: #6e9276;
+    --color-malachite-900: #e4efe3;
 
-    --shadow-panel: 0 1px 2px oklch(0 0 0 / 0.07), 0 8px 24px -8px oklch(0 0 0 / 0.12);
+    --shadow-panel: 0 1px 3px rgb(75 66 48 / 0.04), 0 8px 24px -8px rgb(75 66 48 / 0.08);
     --shadow-float: 0 2px 4px oklch(0 0 0 / 0.09), 0 16px 48px -12px oklch(0 0 0 / 0.18);
   }
 
@@ -242,5 +254,87 @@
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+@layer components {
+  .library-page {
+    background: var(--color-paper);
+  }
+  .continue-writing {
+    background: var(--color-ink-900);
+    border-left: 3px solid var(--color-celadon-700);
+  }
+  html.light .continue-writing {
+    background: #edf3f5;
+    border-color: #cbdde3;
+    border-left-color: #6d91a0;
+  }
+  html.light .continue-writing:hover {
+    background: #e5eef1;
+    border-color: #a9c4cf;
+  }
+  .project-card {
+    --book-accent: #d4a24d;
+    --book-ink: #855d25;
+    box-shadow: 0 2px 8px rgb(116 81 45 / 0.06);
+    content-visibility: auto;
+    contain-intrinsic-size: auto 255px;
+  }
+  .project-card[data-color='1'] {
+    --book-accent: #8eaa91;
+    --book-ink: #4f6a55;
+  }
+  .project-card[data-color='2'] {
+    --book-accent: #d59782;
+    --book-ink: #8f4d3e;
+  }
+  .project-card[data-color='3'] {
+    --book-accent: #88a9c3;
+    --book-ink: #49657a;
+  }
+  .book-monogram {
+    color: var(--book-ink);
+    background: color-mix(in srgb, var(--book-accent) 20%, var(--color-ink-900));
+    border: 1px solid color-mix(in srgb, var(--book-accent) 35%, transparent);
+  }
+  .writing-toolbar {
+    background: var(--color-ink-950);
+  }
+  .welcome-option {
+    background: var(--color-ink-900);
+    border-color: var(--color-ink-800);
+  }
+  html.light .welcome-option[data-tone='outline'] {
+    background: #edf4f7;
+    border-color: #c8dce6;
+  }
+  html.light .welcome-option[data-tone='cards'] {
+    background: #fbede7;
+    border-color: #edcfc1;
+  }
+  html.light .welcome-option[data-tone='import'] {
+    background: #f8f0dc;
+    border-color: #e8d6a8;
+  }
+  .welcome-option:hover {
+    filter: saturate(1.08) brightness(0.99);
+  }
+  html.light .welcome-option[data-tone='outline'] .welcome-option-icon {
+    color: #54758a;
+  }
+  html.light .welcome-option[data-tone='cards'] .welcome-option-icon {
+    color: #a65742;
+  }
+  html.light .welcome-option[data-tone='import'] .welcome-option-icon {
+    color: #9a6c25;
+  }
+  html.dark .book-monogram {
+    color: var(--book-accent);
+  }
+}
+@media (hover: none) {
+  .project-actions {
+    opacity: 1;
   }
 }

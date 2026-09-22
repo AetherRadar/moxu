@@ -382,6 +382,15 @@ function VolumeOutlineSection({
   const [open, setOpen] = useState(false);
   const outline = useProjectOutline(projectId);
   const save = useSaveVolumeOutline(projectId, volumeId);
+  const [planStart, setPlanStart] = useState('1');
+  const [planCount, setPlanCount] = useState('6');
+  const validPlanRange =
+    Number.isInteger(Number(planStart)) &&
+    Number(planStart) >= 1 &&
+    Number(planStart) <= 9999 &&
+    Number.isInteger(Number(planCount)) &&
+    Number(planCount) >= 1 &&
+    Number(planCount) <= 20;
   const [candidates, setCandidates] = useState<OutlineCandidate[]>([]);
   const [recommended, setRecommended] = useState('');
   const content = outlineContent(outline.data, { volumeId });
@@ -407,7 +416,11 @@ function VolumeOutlineSection({
   });
 
   const plan = useMutation({
-    mutationFn: () => outlineApi.planChapters(projectId, volumeId, content),
+    mutationFn: () =>
+      outlineApi.planChapters(projectId, volumeId, content, undefined, {
+        start_chapter: Number(planStart),
+        chapter_count: Number(planCount),
+      }),
     onSuccess: (data) => onPlanned(data.chapters),
     onError: (error) => toast.error(reason(error, '拆章失败，先写好分卷纲')),
   });
@@ -444,12 +457,37 @@ function VolumeOutlineSection({
             recommendedRouteId={recommended}
             onAdopt={(candidate) => adopt.mutate(candidate.outline_content)}
           />
+          <div className="grid grid-cols-2 gap-2">
+            <label className="text-2xs text-ink-400">
+              从第几章开始
+              <Input
+                type="number"
+                min={1}
+                max={9999}
+                value={planStart}
+                disabled={plan.isPending}
+                onChange={(event) => setPlanStart(event.target.value)}
+              />
+            </label>
+            <label className="text-2xs text-ink-400">
+              本次规划章数
+              <Input
+                type="number"
+                min={1}
+                max={20}
+                value={planCount}
+                disabled={plan.isPending}
+                onChange={(event) => setPlanCount(event.target.value)}
+              />
+            </label>
+          </div>
+          <p className="text-2xs text-ink-500">建议每次规划 3–6 章，保留后续剧情的展开空间。</p>
           <Button
             tone="outline"
             size="sm"
             icon={<ListTree />}
             loading={plan.isPending}
-            disabled={content.trim() === ''}
+            disabled={content.trim() === '' || !validPlanRange}
             onClick={() => plan.mutate()}
           >
             按分卷纲拆成章节规划

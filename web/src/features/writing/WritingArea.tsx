@@ -1,9 +1,9 @@
-import { lazy, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Eraser, History, FileText, PenLine, Save, Sparkles, Wand2 } from 'lucide-react';
-import { draftsApi, qk } from '@/api';
+import { Eraser, History, FileText, Save, Sparkles, Wand2 } from 'lucide-react';
+import { draftsApi, projectsApi, qk } from '@/api';
 import { ApiError } from '@/lib/http';
 import { formatChapterLabel, formatVolumeLabel } from '@/lib/chapter-id';
 import { Badge, Button, EmptyState, SkeletonList } from '@/components/ui';
@@ -16,7 +16,13 @@ import {
 import { useChapterTree } from '@/features/chapters/queries';
 import { useDraft, useAutosaveDraft } from '@/features/writing/queries';
 import { useWorkspaceStore } from '@/stores/workspace';
+import { useLayoutStore } from '@/stores/layout';
 import { cn } from '@/lib/cn';
+import { WritingWelcome } from './WritingWelcome';
+import { ChapterGettingStarted } from './ChapterGettingStarted';
+import { WritingCompanion } from './WritingCompanion';
+import { WritingPreferences } from './WritingPreferences';
+import { ArchiveStatus } from './ArchiveStatus';
 
 const SessionDialog = lazy(() =>
   import('@/features/writing/SessionDialog').then((m) => ({ default: m.SessionDialog })),
@@ -41,44 +47,43 @@ type SaveState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error';
 export function WritingArea(): ReactNode {
   const { projectId = '' } = useParams<{ projectId: string }>();
   const chapter = useWorkspaceStore((state) => state.chapter);
+  const project = useQuery({
+    queryKey: qk.project(projectId),
+    queryFn: () => projectsApi.get(projectId),
+    enabled: projectId !== '',
+  });
 
   if (chapter === null || chapter === '') {
-    return (
-      <div className="flex h-full items-center justify-center">
-        <EmptyState
-          icon={<PenLine />}
-          title="选一章开始写"
-          description="左侧章节树里挑一章；没有章就先去大纲面板规划，或新建一章。"
-        />
-      </div>
-    );
+    return <WritingWelcome projectName={project.data?.name} />;
   }
   return <ChapterEditor key={chapter} projectId={projectId} chapter={chapter} />;
 }
 
 function ChapterEditor({ projectId, chapter }: { projectId: string; chapter: string }): ReactNode {
+  const focusMode = useLayoutStore((state) => state.focusMode);
   const client = useQueryClient();
   const draft = useDraft(projectId, chapter);
   const tree = useChapterTree(projectId);
-  const autosave = useAutosaveDraft(projectId, chapter);
-
-  // 终稿徽标：final.md 只由会话定稿写入，404 属正常状态，不重试
-  const finalDraft = useQuery({
-    queryKey: qk.draftFinal(projectId, chapter),
-    queryFn: () => draftsApi.final(projectId, chapter),
-    retry: false,
-  });
+  const { mutate: autosave } = useAutosaveDraft(projectId, chapter);
 
   const editorRef = useRef<EditorHandle>(null);
   const abortRef = useRef<AbortController | null>(null);
   const timerRef = useRef<number>(0);
   const dirtyRef = useRef(false);
   const titleRef = useRef('');
+  const contentRef = useRef('');
+  const revisionRef = useRef(0);
 
-  const chapterNode = tree.volumes.flatMap((v) => v.chapters).find((c) => c.id === chapter);
-  const volume = tree.volumes.find((v) => v.chapters.some((c) => c.id === chapter));
+  const volume = useMemo(
+    () => tree.volumes.find((item) => item.chapters.some((node) => node.id === chapter)),
+    [tree.volumes, chapter],
+  );
+  const chapterNode = useMemo(() => volume?.chapters.find((item) => item.id === chapter), [volume, chapter]);
 
-  const [doc, setDoc] = useState('');
+  const [doc, setDoc] = useState(draft.data?.content ?? '');
+  useEffect(() => {
+    contentRef.current = doc;
+  }, [doc]);
   const [title, setTitle] = useState(chapterNode?.title ?? '');
   const titleDirty = useRef(false);
   const [saveState, setSaveState] = useState<SaveState>('idle');
@@ -99,7 +104,8 @@ function ChapterEditor({ projectId, chapter }: { projectId: string; chapter: str
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chapterNode?.title]);
 
-  const markSaved = (): void => {
+  const markSaved = (revision: number): void => {
+    if (revision !== revisionRef.current) return;
     dirtyRef.current = false;
     setSaveState('saved');
     setSavedAt(new Date());
@@ -107,10 +113,10 @@ function ChapterEditor({ projectId, chapter }: { projectId: string; chapter: str
 
   /** 全量保存：正文 + 标题一起，走后端的 content 端点（会刷新 review/记忆包）。 */
   const save = useMutation({
-    mutationFn: (content: string) =>
-      draftsApi.updateContent(projectId, chapter, { content, title: titleRef.current }),
-    onSuccess: () => {
-      markSaved();
+    mutationFn: ({ content, title }: { content: string; title: string; revision: number }) =>
+      draftsApi.updateContent(projectId, chapter, { content, title }),
+    onSuccess: (_data, variables) => {
+      markSaved(variables.revision);
       void client.invalidateQueries({ queryKey: qk.chapterSummaries(projectId) });
       toast.success('已保存');
     },
@@ -120,20 +126,23 @@ function ChapterEditor({ projectId, chapter }: { projectId: string; chapter: str
     },
   });
 
+  const { mutate: saveDraft } = save;
+
   const scheduleAutosave = useCallback(
     (content: string) => {
       window.clearTimeout(timerRef.current);
+      const revision = revisionRef.current;
       timerRef.current = window.setTimeout(() => {
         abortRef.current?.abort();
         const controller = new AbortController();
         abortRef.current = controller;
         setSaveState('saving');
-        autosave.mutate(
+        autosave(
           { body: { content, title: titleRef.current }, signal: controller.signal },
           {
-            onSuccess: markSaved,
+            onSuccess: () => markSaved(revision),
             onError: (error) => {
-              if (!controller.signal.aborted) setSaveState('error');
+              if (!controller.signal.aborted && revision === revisionRef.current) setSaveState('error');
               void error;
             },
           },
@@ -145,6 +154,8 @@ function ChapterEditor({ projectId, chapter }: { projectId: string; chapter: str
 
   const handleDocChange = useCallback(
     (next: string) => {
+      contentRef.current = next;
+      revisionRef.current += 1;
       setDoc(next);
       dirtyRef.current = true;
       setSaveState('dirty');
@@ -157,6 +168,7 @@ function ChapterEditor({ projectId, chapter }: { projectId: string; chapter: str
     setTitle(value);
     titleDirty.current = true;
     titleRef.current = value;
+    revisionRef.current += 1;
     dirtyRef.current = true;
     setSaveState('dirty');
     if (editorRef.current !== null) scheduleAutosave(editorRef.current.getDoc());
@@ -168,14 +180,13 @@ function ChapterEditor({ projectId, chapter }: { projectId: string; chapter: str
     const content = editorRef.current?.getDoc();
     if (content === undefined || !dirtyRef.current) return;
     setSaveState('saving');
-    save.mutate(content);
-  }, [save]);
+    saveDraft({ content, title: titleRef.current, revision: revisionRef.current });
+  }, [saveDraft]);
 
   // Ctrl/Cmd+S 手动保存；切走/关页前把脏内容冲掉
   useEffect(() => {
-    // 句柄对象本身稳定（useImperativeHandle 空依赖），effect 起头捕获，
-    // cleanup 里再读 ref.current 会被 lint 判成"可能已变"的旧值
-    const editor = editorRef.current;
+    // 只随章节切换绑定；不要依赖每次渲染都会变化的 mutation 结果对象。
+    // 正文快照独立于编辑器句柄，加载期间和子组件卸载后同样可用。
     const onKey = (event: KeyboardEvent): void => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
         event.preventDefault();
@@ -183,13 +194,13 @@ function ChapterEditor({ projectId, chapter }: { projectId: string; chapter: str
       }
     };
     const onUnload = (): void => {
-      if (!dirtyRef.current || editor === null) return;
+      if (!dirtyRef.current) return;
       // 同步 XHR 已死路一条，keepalive fetch 尽力而为（body 上限 64KB，超长章丢弃不补）
       void draftsApi
         .autosave(
           projectId,
           chapter,
-          { content: editor.getDoc(), title: titleRef.current },
+          { content: contentRef.current, title: titleRef.current },
           { keepalive: true },
         )
         .catch(() => undefined);
@@ -202,10 +213,10 @@ function ChapterEditor({ projectId, chapter }: { projectId: string; chapter: str
       window.clearTimeout(timerRef.current);
       abortRef.current?.abort();
       // 切章节时未保存的内容也冲掉
-      if (dirtyRef.current && editor !== null) {
+      if (dirtyRef.current) {
         void draftsApi
           .autosave(projectId, chapter, {
-            content: editor.getDoc(),
+            content: contentRef.current,
             title: titleRef.current,
           })
           .catch(() => undefined);
@@ -218,9 +229,14 @@ function ChapterEditor({ projectId, chapter }: { projectId: string; chapter: str
     (text: string): void => {
       editorRef.current?.setDoc(text);
       dirtyRef.current = true;
-      save.mutate(text);
+      window.clearTimeout(timerRef.current);
+      abortRef.current?.abort();
+      contentRef.current = text;
+      setDoc(text);
+      revisionRef.current += 1;
+      saveDraft({ content: text, title: titleRef.current, revision: revisionRef.current });
     },
-    [save],
+    [saveDraft],
   );
 
   const isNew = draft.isError && draft.error instanceof ApiError && draft.error.status === 404;
@@ -262,8 +278,8 @@ function ChapterEditor({ projectId, chapter }: { projectId: string; chapter: str
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* ── 章节头 ─────────────────────────────────────── */}
-      <header className="flex items-center gap-3 border-b border-ink-800 px-4 py-2">
-        <div className="flex min-w-0 flex-1 items-baseline gap-2.5">
+      <header className="writing-toolbar flex flex-wrap items-center gap-3 border-b border-ink-800 px-5 py-4">
+        <div className="flex min-w-0 basis-full flex-wrap items-baseline gap-2.5 xl:basis-auto xl:flex-1">
           <span className="tnum shrink-0 text-2xs text-celadon-500">
             {volume !== undefined ? `${formatVolumeLabel(volume.id, volume.title)} · ` : ''}
             {formatChapterLabel(chapter)}
@@ -277,11 +293,11 @@ function ChapterEditor({ projectId, chapter }: { projectId: string; chapter: str
           />
         </div>
 
-        <div className="flex shrink-0 items-center gap-1.5">
-          {finalDraft.data !== undefined && <Badge tone="success">已定稿</Badge>}
+        <div className="flex max-w-full flex-wrap items-center gap-1.5">
           <SaveIndicator state={save.isPending ? 'saving' : saveState} savedAt={savedAt} />
           <span className="tnum text-2xs text-ink-500">{doc.length.toLocaleString()} 字</span>
           <div className="mx-1 h-4 w-px bg-ink-800" />
+          <WritingPreferences />
           <Button tone="ghost" size="sm" icon={<History />} onClick={() => setDialog('versions')}>
             版本
           </Button>
@@ -302,7 +318,7 @@ function ChapterEditor({ projectId, chapter }: { projectId: string; chapter: str
             size="sm"
             icon={<Save />}
             loading={save.isPending}
-            disabled={saveState !== 'dirty'}
+            disabled={saveState !== 'dirty' && saveState !== 'error'}
             onClick={flush}
           >
             保存
@@ -310,17 +326,39 @@ function ChapterEditor({ projectId, chapter }: { projectId: string; chapter: str
         </div>
       </header>
 
+      {!focusMode && <ArchiveStatus projectId={projectId} chapter={chapter} />}
+
       {/* ── 编辑器 ─────────────────────────────────────── */}
-      <div className="min-h-0 flex-1">
-        <CodeMirrorEditor
-          ref={editorRef}
-          docId={chapter}
-          initialDoc={initialDoc}
-          placeholder="从这里开始写…"
-          onDocChange={handleDocChange}
-          onSelectionChange={setSelection}
-        />
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-paper">
+        <div className="max-h-[45%] shrink-0 overflow-y-auto px-4" hidden={focusMode || doc.trim() !== ''}>
+          <ChapterGettingStarted
+            projectId={projectId}
+            chapter={chapter}
+            onWrite={() => editorRef.current?.focus()}
+            onOutline={() => useLayoutStore.getState().setSideView('outline')}
+            onAssistant={() => setDialog('session')}
+          />
+        </div>
+        <div className="min-h-0 flex-1">
+          <CodeMirrorEditor
+            ref={editorRef}
+            docId={chapter}
+            initialDoc={initialDoc}
+            placeholder="从这里开始写…"
+            onDocChange={handleDocChange}
+            onSelectionChange={setSelection}
+          />
+        </div>
       </div>
+
+      {!focusMode && (
+        <WritingCompanion
+          hasSelection={selection.from !== selection.to}
+          onDraft={() => setDialog('session')}
+          onBrief={() => setDialog('brief')}
+          onRevise={() => setDialog('suggest')}
+        />
+      )}
 
       {/* ── 对话框（懒加载）────────────────────────────── */}
       {dialog === 'session' && (

@@ -18,6 +18,10 @@ import java.util.List;
 @AllArgsConstructor
 public class ChapterSummary {
     
+    @JsonProperty("generation_status")
+    @Builder.Default
+    private String generationStatus = "complete";
+
     private String chapter;
     
     @JsonProperty("volume_id")

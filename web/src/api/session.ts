@@ -2,6 +2,7 @@ import { http, seg, Timeout } from '@/lib/http';
 import { openTextStream } from '@/lib/sse';
 import type {
   AnswerQuestionsRequest,
+  ArchiveReport,
   EditSuggestRequest,
   EditSuggestResponse,
   FeedbackRequest,
@@ -14,6 +15,11 @@ import type {
 const base = (projectId: string): string => `/projects/${seg(projectId)}/session`;
 
 export const sessionApi = {
+  archiveStatus: (projectId: string, chapter: string) =>
+    http.get<ArchiveReport>(`${base(projectId)}/archive/${seg(chapter)}`),
+  retryArchive: (projectId: string, chapter: string) =>
+    http.post<SessionFlowResponse>(`${base(projectId)}/archive/${seg(chapter)}/retry`, { timeout: Timeout.batch }),
+
   /** 启动会话：生成场景简报并跑研究循环，可能反问。 */
   start: (projectId: string, body: StartSessionRequest, signal?: AbortSignal) =>
     http.post<SessionFlowResponse>(`${base(projectId)}/start`, { body, timeout: Timeout.batch, signal }),

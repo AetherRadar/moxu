@@ -373,8 +373,8 @@ public class ArchivistAgent extends BaseAgent {
 
             // 2. 检索相关设定
             String query = chapterGoal + " " + String.join(" ", characterNames);
-            List<ContextItem> relevantItems = selectEngine.retrievalSelect(
-                    projectId, query,
+            List<ContextItem> relevantItems = selectEngine.retrievalSelectForChapter(
+                    projectId, chapter, query,
                     List.of("character", "world", "fact", "summary"),
                     10
             );
@@ -1003,6 +1003,7 @@ public class ArchivistAgent extends BaseAgent {
             List<ChapterSummary> allSummaries = draftStorage.listChapterSummaries(projectId, null);
             List<ChapterSummary> previous = new ArrayList<>();
             for (ChapterSummary summary : allSummaries) {
+                if (summary.getWordCount() == 0) continue;
                 if (compareChapters(summary.getChapter(), chapter) < 0) {
                     previous.add(summary);
                 }
@@ -2470,7 +2471,9 @@ public class ArchivistAgent extends BaseAgent {
     public ChapterSummary generateChapterSummary(String projectId, String chapter,
                                                    String chapterTitle, String finalDraft) {
         if (finalDraft == null || finalDraft.isBlank()) {
-            return buildFallbackChapterSummary(chapter, chapterTitle, finalDraft);
+            ChapterSummary fallback = buildFallbackChapterSummary(chapter, chapterTitle, finalDraft);
+            fallback.setGenerationStatus("fallback");
+            return fallback;
         }
 
         String retryHint = null;
@@ -2495,11 +2498,15 @@ public class ArchivistAgent extends BaseAgent {
                 retryHint = buildSummaryRetryHint("llm_call_failed: " + e.getMessage());
                 log.warn("generateChapterSummary 失败: chapter={}, attempt={}/{}, error={}",
                         chapter, attempt, CHAPTER_SUMMARY_MAX_ATTEMPTS, e.getMessage());
+                // The gateway already retried transport failures; avoid multiplying retries by three.
+                break;
             }
         }
 
         log.warn("generateChapterSummary 多次尝试后仍失败，使用回退: chapter={}", chapter);
-        return buildFallbackChapterSummary(chapter, chapterTitle, finalDraft);
+        ChapterSummary fallback = buildFallbackChapterSummary(chapter, chapterTitle, finalDraft);
+        fallback.setGenerationStatus("fallback");
+        return fallback;
     }
 
     private List<Map<String, String>> buildChapterSummaryMessages(String chapter,
@@ -3168,6 +3175,10 @@ public class ArchivistAgent extends BaseAgent {
      */
     public Map<String, Object> generateVolumeSummary(String projectId, String volumeId,
                                                        List<ChapterSummary> chapterSummaries) {
+        chapterSummaries = chapterSummaries == null ? List.of() : chapterSummaries.stream()
+                .filter(Objects::nonNull)
+                .filter(summary -> summary.getWordCount() > 0)
+                .toList();
         Map<String, Object> fallback = buildFallbackVolumeSummary(volumeId, chapterSummaries);
         if (chapterSummaries == null || chapterSummaries.isEmpty()) {
             return fallback;
@@ -3237,6 +3248,7 @@ public class ArchivistAgent extends BaseAgent {
             }
             if (root.has("brief_summary") && !root.get("brief_summary").isNull()) {
                 result.put("brief_summary", root.get("brief_summary").asText("").trim());
+                if (!root.get("brief_summary").asText("").isBlank()) result.put("generation_status", "complete");
             }
             if (root.has("key_arcs") && root.get("key_arcs").isArray()) {
                 List<String> arcs = new ArrayList<>();
@@ -3263,6 +3275,7 @@ public class ArchivistAgent extends BaseAgent {
     private Map<String, Object> buildFallbackVolumeSummary(String volumeId, List<ChapterSummary> chapterSummaries) {
         Map<String, Object> summary = new LinkedHashMap<>();
         summary.put("volume_id", volumeId);
+        summary.put("generation_status", "fallback");
         summary.put("title", "");
         summary.put("brief_summary", "");
         summary.put("chapter_count", chapterSummaries != null ? chapterSummaries.size() : 0);
@@ -3292,7 +3305,9 @@ public class ArchivistAgent extends BaseAgent {
                   "facts": [
                     {
                       "statement": "事实陈述（一句话，简洁明确）",
-                      "confidence": 0.9
+                      "confidence": 0.9,
+                      "evidence": "正文中逐字引用的完整原句，保留像是/怀疑等限定词",
+                      "certainty": "explicit 或 inferred"
                     }
                   ],
                   "timeline_events": [
@@ -3330,6 +3345,8 @@ public class ArchivistAgent extends BaseAgent {
                 - character_states 应尽量覆盖“本章结束时仍然有效”的位置、伤势、资源与目标
                 - state 可作为一句话概述补充；如果结构化字段已足够，state 可以留空
                 - 不确定就留空，不要猜
+                - 角色猜测、传闻、目的推断不得写成已证实事实；certainty 标为 inferred。
+                - 每条事实必须提供 evidence 原句；一句话混合事实与猜测时拆开，不得擅自证实动机。
                 - facts 最多 5 条
                 """;
 
@@ -3348,23 +3365,20 @@ public class ArchivistAgent extends BaseAgent {
         try {
             List<Map<String, String>> messages = buildMessages(systemPrompt, userPrompt, List.of());
             LlmResponse response = callLlm(messages);
+            String json = extractJson(response.getContent());
+            JsonNode root = json == null ? null : objectMapper.readTree(json);
+            if (root == null || !root.isObject()
+                    || !root.path("facts").isArray() || !root.path("timeline_events").isArray()
+                    || !root.path("character_states").isArray()) {
+                throw new IllegalStateException("事实抽取未返回完整结构，请重试归档");
+            }
             Map<String, Object> parsed = parseCanonUpdatesFromJson(projectId, response.getContent(), chapter);
             parsed = supplementCanonUpdates(projectId, chapter, finalDraft, parsed);
-            parsed = postProcessCanonUpdates(projectId, chapter, parsed);
-            if (isCanonUpdatesEmpty(parsed) && response.getContent() != null && !response.getContent().isBlank()) {
-                log.warn("extractCanonUpdates 首次解析为空，尝试 JSON 修复: chapter={}, preview={}",
-                        chapter, preview(response.getContent(), 600));
-                Map<String, Object> repaired = repairCanonUpdates(projectId, chapter, response.getContent());
-                repaired = supplementCanonUpdates(projectId, chapter, finalDraft, repaired);
-                repaired = postProcessCanonUpdates(projectId, chapter, repaired);
-                if (!isCanonUpdatesEmpty(repaired)) {
-                    return repaired;
-                }
-            }
-            return parsed;
+            parsed = com.moxu.quality.CanonEvidenceGuard.apply(parsed, finalDraft);
+            return postProcessCanonUpdates(projectId, chapter, parsed);
         } catch (Exception e) {
             log.warn("extractCanonUpdates LLM 调用失败: {}", e.getMessage());
-            return Map.of("facts", List.of(), "timeline_events", List.of(), "character_states", List.of());
+            throw new IllegalStateException("事实抽取失败，请重试归档", e);
         }
     }
 
@@ -3487,6 +3501,8 @@ public class ArchivistAgent extends BaseAgent {
                             Map<String, Object> fact = new HashMap<>();
                             fact.put("statement", stmt);
                             fact.put("confidence", n.path("confidence").asDouble(0.9));
+                            fact.put("evidence", n.path("evidence").asText(""));
+                            fact.put("certainty", n.path("certainty").asText("unverified"));
                             fact.put("introduced_in", chapter);
                             fact.put("source", chapter);
                             fact.put("type", type);
@@ -4131,7 +4147,7 @@ public class ArchivistAgent extends BaseAgent {
             if (needsCarryoverFacts && (containsAll(finalDraft, "法器", "遗失") || containsAll(finalDraft, "法器", "不见"))) {
                 addHeuristicFact(results, seen, chapter, subject + "随身法器遗失，谷底求生只能依赖残余物资", 0.86d);
             }
-            if (needsCarryoverFacts && (containsAll(finalDraft, "水囊", "见底") || containsAnyToken(finalDraft, List.of("少量碎干粮", "只剩", "残余物资")))) {
+            if (needsCarryoverFacts && containsAll(finalDraft, "水囊", "见底")) {
                 addHeuristicFact(results, seen, chapter, subject + "随身水囊几乎见底且补给有限，当前求生资源极度匮乏", 0.80d);
             }
         }
@@ -4329,6 +4345,13 @@ public class ArchivistAgent extends BaseAgent {
         }
 
         Map<String, Object> result = new LinkedHashMap<>(parsed);
+        for (Map<String, Object> selected : selectedFacts) {
+            rawFacts.stream().filter(raw -> cleanFactStatement(String.valueOf(raw.getOrDefault("statement", "")))
+                    .equals(selected.get("statement"))).findFirst().ifPresent(raw -> {
+                selected.put("evidence", raw.getOrDefault("evidence", ""));
+                selected.put("certainty", raw.getOrDefault("certainty", "unverified"));
+            });
+        }
         result.put("facts", selectedFacts);
         return result;
     }

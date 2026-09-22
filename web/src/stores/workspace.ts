@@ -32,7 +32,7 @@ export const useWorkspaceStore = create<WorkspaceState>()(
       lastChapter: {},
 
       openProject: (projectId) => {
-        if (get().projectId === projectId) return;
+        if (get().projectId === projectId && get().chapter !== null) return;
         set({ projectId, chapter: get().lastChapter[projectId] ?? null, expandedVolumes: [] });
       },
 

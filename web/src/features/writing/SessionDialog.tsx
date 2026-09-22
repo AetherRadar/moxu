@@ -13,6 +13,8 @@ function reason(error: unknown, fallback: string): string {
   return error instanceof ApiError ? error.message : fallback;
 }
 
+import { ArchiveDetails } from './ArchiveStatus';
+
 type Stage = 'form' | 'questions' | 'draft' | 'confirmed';
 
 /**
@@ -140,8 +142,10 @@ export function SessionDialog({
         rejected_entities: rejected,
       }),
     onSuccess: (data, action) => {
+      if (data.success === false) { settle(data); return; }
       if (action === 'confirm') {
-        toast.success('已定稿，分析任务已触发');
+        if (data.archive?.status === 'complete') toast.success('已定稿，归档完成');
+        else toast.warning('正文已定稿，部分归档待完成');
       } else {
         setFeedbackText('');
         toast.success(`已按反馈重写（第 ${data.iteration ?? '?'} 轮）`);
@@ -397,9 +401,9 @@ export function SessionDialog({
       )}
 
       {stage === 'confirmed' && (
-        <p className="py-6 text-center text-sm text-malachite-400">
-          本章已定稿，后端正在跑摘要/事实分析。
-        </p>
+        <div className="py-4">
+          {flow?.archive ? <ArchiveDetails report={flow.archive} /> : <p>正文已定稿，归档状态请在写作页查看。</p>}
+        </div>
       )}
     </Dialog>
   );

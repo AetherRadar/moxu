@@ -5,7 +5,7 @@ import { variants } from './variants';
 
 const buttonClass = variants({
   base: cn(
-    'relative inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md font-medium',
+    'relative inline-flex shrink-0 items-center justify-center gap-1.5 rounded-md font-medium [&_svg]:size-4 [&_svg]:shrink-0',
     'whitespace-nowrap transition-[background-color,border-color,color,opacity] duration-150',
     'disabled:pointer-events-none disabled:opacity-45',
     // 按下时轻微下沉，给一点物理反馈
@@ -14,7 +14,7 @@ const buttonClass = variants({
   variants: {
     tone: {
       /** 主操作：生成、保存、确认 */
-      primary: 'bg-celadon-600 text-ink-950 hover:bg-celadon-500 shadow-sm',
+      primary: 'bg-action text-action-foreground hover:bg-action-hover shadow-sm',
       /** 次要操作，最常用 */
       default: 'bg-ink-800 text-ink-100 hover:bg-ink-700 border border-ink-700',
       /** 弱化：工具栏、面板内联操作 */
@@ -60,8 +60,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       className={buttonClass({ tone, size }, className)}
       {...rest}
     >
-      {/* 用 invisible 而不是卸载内容，宽度才不会在 loading 切换时抖动 */}
-      <span className={cn('inline-flex items-center gap-1.5', loading && 'invisible')}>
+      {/* 保留文字尺寸与无障碍名称，加载时只隐藏视觉内容。 */}
+      <span className={cn('inline-flex items-center gap-1.5', loading && 'opacity-0')}>
         {icon}
         {children}
       </span>

@@ -200,7 +200,8 @@ public class Orchestrator {
         this.currentChapter = chapter;
         this.iterationCount = 0;
         this.questionRound = 0;
-        String normalizedChapterGoal = normalizeChapterGoalForCurrentChapter(chapter, chapterGoal);
+        String normalizedChapterGoal = draftStorage.resolveWritingGoal(projectId, chapter,
+                normalizeChapterGoalForCurrentChapter(chapter, chapterGoal));
 
         try {
             // 步骤1: 档案员生成场景简报
@@ -370,7 +371,8 @@ public class Orchestrator {
                                                List<Map<String, String>> answers) {
         this.currentProjectId = projectId;
         this.currentChapter = chapter;
-        String normalizedChapterGoal = normalizeChapterGoalForCurrentChapter(chapter, chapterGoal);
+        String normalizedChapterGoal = draftStorage.resolveWritingGoal(projectId, chapter,
+                normalizeChapterGoalForCurrentChapter(chapter, chapterGoal));
 
         try {
             // 从存储加载已有场景简报
@@ -569,7 +571,7 @@ public class Orchestrator {
             editorContext.put("user_feedback", feedback);
             editorContext.put("rejected_entities", rejectedEntities != null ? rejectedEntities : List.of());
             Map<String, Object> cachedPack = memoryPackStorage.readPack(projectId, chapter);
-            editorContext.put("memory_pack", cachedPack != null ? cachedPack : buildMemoryPackPayload(projectId, chapter));
+            editorContext.put("memory_pack", cachedPack != null && !Boolean.TRUE.equals(cachedPack.get("context_stale")) ? cachedPack : buildMemoryPackPayload(projectId, chapter));
 
             Map<String, Object> result = editorAgent.execute(projectId, chapter, editorContext);
             broadcastAgentTrace("editor", Map.of(
@@ -708,9 +710,11 @@ public class Orchestrator {
         try {
             List<String> previousSummaries = draftStorage.listChapterSummaries(projectId, null)
                     .stream()
+                    .filter(s -> s.getWordCount() > 0)
                     .filter(s -> compareChapterIds(s.getChapter(), chapter) < 0)
-                    .sorted((a, b) -> compareChapterIds(a.getChapter(), b.getChapter()))
+                    .sorted((a, b) -> compareChapterIds(b.getChapter(), a.getChapter()))
                     .limit(3)
+                    .sorted((a, b) -> compareChapterIds(a.getChapter(), b.getChapter()))
                     .map(s -> {
                         StringBuilder sb = new StringBuilder(s.getChapter());
                         if (s.getTitle() != null && !s.getTitle().isBlank())
@@ -793,7 +797,7 @@ public class Orchestrator {
         return response;
     }
     
-    private Map<String, Object> finalizeChapter(String projectId, String chapter) {
+    private synchronized Map<String, Object> finalizeChapter(String projectId, String chapter) {
         try {
             List<String> versions = draftStorage.listDraftVersions(projectId, chapter);
             if (versions.isEmpty()) {
@@ -811,14 +815,19 @@ public class Orchestrator {
             draftStorage.saveFinalDraft(projectId, chapter, draft.getContent());
 
             // 对齐 Python _finalize_chapter：确认后自动触发分析（摘要 + 事实表更新）
-            analyzeContent(projectId, chapter, draft.getContent());
+            Map<String, Object> archive;
+            try { archive = analyzeContent(projectId, chapter, draft.getContent()); }
+            catch (Exception archiveError) {
+                archive = Map.of("status", "partial", "message", "正文已保存，但归档状态未能保存，请重试归档");
+            }
             
             updateStatus(SessionStatus.COMPLETED, "Chapter completed.");
             
             return Map.of(
                     "success", true,
                     "status", SessionStatus.COMPLETED.getValue(),
-                    "message", "Chapter finalized successfully",
+                    "message", "正文已定稿",
+                    "archive", archive,
                     "final_draft", draft
             );
             
@@ -828,122 +837,34 @@ public class Orchestrator {
         }
     }
 
-    /**
-     * 确认草稿后自动分析（对齐 Python _analyze_content）
-     * 生成章节摘要 + 分卷摘要 + 提取事实表更新 + 冲突检测，静默执行（失败不影响主流程）
-     */
-    private void analyzeContent(String projectId, String chapter, String content) {
-        // 对齐 Python _normalize_chapter_id
-        String normalizedChapter = normalizeChapterId(chapter);
-        ChapterSummary summary = null;
-        String chapterTitle = resolvePreferredChapterTitle(projectId, normalizedChapter, null);
-        String volumeId = extractVolumeId(normalizedChapter);
+    private volatile String archivingChapter;
 
+    public boolean isArchiving(String chapter) {
+        return normalizeChapterId(chapter).equals(archivingChapter);
+    }
+
+    private Map<String, Object> analyzeContent(String projectId, String chapter, String content) throws Exception {
+        String normalized = normalizeChapterId(chapter);
+        archivingChapter = normalized;
         try {
-            // 生成章节摘要
-            summary = archivistAgent.generateChapterSummary(projectId, normalizedChapter, chapterTitle, content);
-            summary.setChapter(normalizedChapter);
-            summary.setWordCount(content.length());
-            if (summary.getVolumeId() == null || summary.getVolumeId().isBlank()) {
-                summary.setVolumeId(volumeId);
-            }
-            normalizeChapterSummaryTitle(projectId, normalizedChapter, summary, chapterTitle);
-        } catch (Exception e) {
-            log.warn("analyzeContent: 生成摘要失败: {}", e.getMessage());
-            summary = ChapterSummary.builder()
-                    .chapter(normalizedChapter)
-                    .title(chapterTitle)
-                    .briefSummary("")
-                    .wordCount(content != null ? content.length() : 0)
-                    .volumeId(volumeId)
-                    .keyEvents(new ArrayList<>())
-                    .newFacts(new ArrayList<>())
-                    .characterStateChanges(new ArrayList<>())
-                    .openLoops(new ArrayList<>())
-                    .build();
-            normalizeChapterSummaryTitle(projectId, normalizedChapter, summary, chapterTitle);
+            return new ChapterArchive(archivistAgent, draftStorage, canonStorage, memoryPackStorage)
+                    .run(projectId, normalized, content, resolvePreferredChapterTitle(projectId, normalized, null),
+                            message -> updateStatus(SessionStatus.WAITING_FEEDBACK, message));
+        } finally {
+            archivingChapter = null;
         }
+    }
 
-        List<Map<String, Object>> savedFacts = new ArrayList<>();
-        List<Map<String, Object>> savedTimeline = new ArrayList<>();
-        List<Map<String, Object>> savedStates = new ArrayList<>();
-        Map<String, Object> canonUpdates = Map.of(
-                "facts", List.of(),
-                "timeline_events", List.of(),
-                "character_states", List.of()
-        );
-
+    public synchronized Map<String, Object> retryArchive(String projectId, String chapter) {
         try {
-            // 提取事实表更新
-            canonUpdates = archivistAgent.extractCanonUpdates(projectId, normalizedChapter, content);
-
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> facts = (List<Map<String, Object>>) canonUpdates.getOrDefault("facts", List.of());
-            for (Map<String, Object> factData : facts) {
-                String stmt = (String) factData.getOrDefault("statement", "");
-                if (stmt.isBlank()) continue;
-                try {
-                    com.moxu.model.entity.Fact fact = com.moxu.model.entity.Fact.builder()
-                            .statement(stmt).content(stmt).source(normalizedChapter).introducedIn(normalizedChapter)
-                            .confidence(((Number) factData.getOrDefault("confidence", 0.9)).doubleValue())
-                            .build();
-                    canonStorage.saveFact(projectId, fact);
-                    savedFacts.add(factData);
-                } catch (Exception ex) {
-                    log.warn("analyzeContent: 保存 fact 失败: {}", ex.getMessage());
-                }
-            }
-
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> timelineEvents = (List<Map<String, Object>>) canonUpdates.getOrDefault("timeline_events", List.of());
-            for (Map<String, Object> event : timelineEvents) {
-                try {
-                    canonStorage.saveTimelineEvent(projectId, new java.util.LinkedHashMap<>(event));
-                    savedTimeline.add(event);
-                } catch (Exception ex) { log.warn("analyzeContent: 保存 timeline_event 失败: {}", ex.getMessage()); }
-            }
-
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> characterStates = (List<Map<String, Object>>) canonUpdates.getOrDefault("character_states", List.of());
-            for (Map<String, Object> state : characterStates) {
-                try {
-                    canonStorage.saveCharacterState(projectId, new java.util.LinkedHashMap<>(state));
-                    savedStates.add(state);
-                } catch (Exception ex) { log.warn("analyzeContent: 保存 character_state 失败: {}", ex.getMessage()); }
-            }
+            String normalized = normalizeChapterId(chapter);
+            String content = draftStorage.getFinalDraft(projectId, normalized)
+                    .orElseThrow(() -> new IllegalStateException("请先定稿，再执行归档"));
+            Map<String, Object> archive = analyzeContent(projectId, normalized, content);
+            updateStatus(SessionStatus.COMPLETED, "complete".equals(archive.get("status")) ? "归档完成" : "正文已定稿，部分归档待重试");
+            return Map.of("success", true, "status", "completed", "archive", archive);
         } catch (Exception e) {
-            log.warn("analyzeContent: 提取事实表失败: {}", e.getMessage());
-        }
-
-        try {
-            enrichChapterSummary(projectId, summary, content, canonUpdates);
-            draftStorage.saveChapterSummary(projectId, summary);
-
-            // 生成分卷摘要（对齐 Python _analyze_content 里的 generate_volume_summary）
-            try {
-                List<ChapterSummary> volumeSummaries = draftStorage.listChapterSummaries(projectId, volumeId);
-                Map<String, Object> volumeSummary = archivistAgent.generateVolumeSummary(projectId, volumeId, volumeSummaries);
-                draftStorage.saveVolumeSummary(projectId, volumeSummary);
-            } catch (Exception ex) {
-                log.warn("analyzeContent: 生成分卷摘要失败: {}", ex.getMessage());
-            }
-        } catch (Exception e) {
-            log.warn("analyzeContent: 保存增强摘要失败: {}", e.getMessage());
-        }
-
-        // 冲突检测（对齐 Python _analyze_content 里的 detect_conflicts）
-        try {
-            Map<String, Object> conflictReport = canonStorage.detectConflicts(projectId, normalizedChapter, savedFacts, savedTimeline, savedStates);
-            draftStorage.saveConflictReport(projectId, normalizedChapter, conflictReport);
-        } catch (Exception e) {
-            log.warn("analyzeContent: 冲突检测失败: {}", e.getMessage());
-        }
-
-        // 保存 memory pack（对齐 Python _prepare_memory_pack_payload 的持久化）
-        try {
-            memoryPackStorage.writePack(projectId, normalizedChapter, buildMemoryPackPayload(projectId, normalizedChapter));
-        } catch (Exception e) {
-            log.warn("analyzeContent: 保存 memory pack 失败: {}", e.getMessage());
+            return Map.of("success", false, "error", "归档未完成，请检查服务后重试");
         }
     }
 
@@ -1244,6 +1165,7 @@ public class Orchestrator {
         int statesSaved = 0;
         int cardsCreated = 0;
         boolean summarySaved = false;
+        List<String> warnings = new ArrayList<>();
         boolean success = false;
         String failure = "";
         try {
@@ -1254,6 +1176,7 @@ public class Orchestrator {
                             .orElse(""));
             stageTimings.put("load_analysis_content", elapsedMillis(stageStartedAt));
 
+            analysis = com.moxu.quality.CanonEvidenceGuard.apply(analysis, analysisContent);
             // 保存摘要
             @SuppressWarnings("unchecked")
             Map<String, Object> summaryData = (Map<String, Object>) analysis.get("summary");
@@ -1298,6 +1221,7 @@ public class Orchestrator {
                         summary.setOpenLoops(refreshed.getOpenLoops());
                     }
                 }
+                summary.setNewFacts(analysisFacts.stream().map(item -> String.valueOf(item.getOrDefault("statement", ""))).toList());
                 normalizeChapterSummaryTitle(projectId, normalizedChapter, summary, requestedTitle);
                 draftStorage.saveChapterSummary(projectId, summary);
                 summarySaved = true;
@@ -1310,8 +1234,10 @@ public class Orchestrator {
                         String volumeId = summary.getVolumeId();
                         List<ChapterSummary> volumeSummaries = draftStorage.listChapterSummaries(projectId, volumeId);
                         Map<String, Object> volumeSummary = archivistAgent.generateVolumeSummary(projectId, volumeId, volumeSummaries);
-                        draftStorage.saveVolumeSummary(projectId, volumeSummary);
+                        if ("fallback".equals(volumeSummary.get("generation_status"))) warnings.add("分卷摘要生成失败");
+                        else draftStorage.saveVolumeSummary(projectId, volumeSummary);
                     } catch (Exception ex) {
+                        warnings.add("分卷摘要保存失败");
                         log.warn("saveAnalysis: 生成分卷摘要失败: {}", ex.getMessage());
                     } finally {
                         stageTimings.put("rebuild_volume_summary", elapsedMillis(volumeSummaryStartedAt));
@@ -1347,11 +1273,14 @@ public class Orchestrator {
                             .content(stmt)
                             .source(normalizedChapter)
                             .introducedIn(normalizedChapter)
+                            .evidence(String.valueOf(factData.getOrDefault("evidence", "")))
+                            .certainty("explicit")
                             .confidence(((Number) factData.getOrDefault("confidence", 0.9)).doubleValue())
                             .build();
                     canonStorage.saveFact(projectId, fact);
                     factsSaved++;
                 } catch (Exception e) {
+                    warnings.add("fact 保存失败");
                     log.warn("保存 fact 失败: {}", e.getMessage());
                 }
             }
@@ -1368,6 +1297,7 @@ public class Orchestrator {
                     canonStorage.saveTimelineEvent(projectId, normalizedEvent);
                     timelineSaved++;
                 } catch (Exception e) {
+                    warnings.add("timeline_event 保存失败");
                     log.warn("保存 timeline_event 失败: {}", e.getMessage());
                 }
             }
@@ -1384,6 +1314,7 @@ public class Orchestrator {
                     canonStorage.saveCharacterState(projectId, normalizedState);
                     statesSaved++;
                 } catch (Exception e) {
+                    warnings.add("character_state 保存失败");
                     log.warn("保存 character_state 失败: {}", e.getMessage());
                 }
             }
@@ -1413,14 +1344,23 @@ public class Orchestrator {
             try {
                 memoryPackStorage.writePack(projectId, normalizedChapter, buildMemoryPackPayload(projectId, normalizedChapter, traceId));
             } catch (Exception e) {
+                warnings.add("记忆包保存失败");
                 log.warn("saveAnalysis: 保存 memory pack 失败: {}", e.getMessage());
             }
             stageTimings.put("memory_pack", elapsedMillis(stageStartedAt));
 
-            success = true;
+            Map<String, Object> report = new LinkedHashMap<>();
+            report.put("status", warnings.isEmpty() ? "complete" : "partial");
+            report.put("warnings", warnings);
+            report.put("pending_facts", analysis.getOrDefault("pending_facts", List.of()));
+            draftStorage.saveAnalysisReview(projectId, normalizedChapter, report);
+            success = warnings.isEmpty();
 
             return Map.of(
-                    "success", true,
+                    "success", success,
+                    "status", success ? "complete" : "partial",
+                    "error", String.join("；", warnings),
+                    "pending_facts", analysis.getOrDefault("pending_facts", List.of()),
                     "stats", Map.of(
                             "summary_saved", summarySaved,
                             "facts_saved", factsSaved,
@@ -1484,7 +1424,7 @@ public class Orchestrator {
             }
         }
         
-        return Map.of("success", true, "results", results);
+        return Map.of("success", results.stream().allMatch(item -> Boolean.TRUE.equals(item.get("success"))), "results", results);
     }
     
     /**
@@ -1530,7 +1470,7 @@ public class Orchestrator {
 
         refreshVolumeSummaries(projectId, volumeIdsToRefresh);
         
-        return Map.of("success", true, "results", results);
+        return Map.of("success", results.stream().allMatch(item -> Boolean.TRUE.equals(item.get("success"))), "results", results);
     }
     
     /**
@@ -1564,7 +1504,7 @@ public class Orchestrator {
 
         refreshVolumeSummaries(projectId, volumeIdsToRefresh);
         
-        return Map.of("success", true, "results", results);
+        return Map.of("success", results.stream().allMatch(item -> Boolean.TRUE.equals(item.get("success"))), "results", results);
     }
     
     private Map<String, Object> buildAnalysis(String projectId, String chapter,
@@ -1585,6 +1525,9 @@ public class Orchestrator {
             log.info("Chapter analysis timing: project={}, chapter={}, timings={}",
                     projectId, chapter, result.timings());
         }
+        if (summary == null || "fallback".equals(summary.getGenerationStatus())) {
+            throw new IllegalStateException("章节摘要生成失败，请重试分析");
+        }
         summary.setWordCount(content.length());
         if (summary.getVolumeId() == null || summary.getVolumeId().isBlank()) {
             summary.setVolumeId(extractVolumeId(chapter));
@@ -1598,12 +1541,14 @@ public class Orchestrator {
         Map<String, Object> normalizedCanonUpdates = new LinkedHashMap<>(canonUpdates);
         normalizedCanonUpdates.put("facts", facts);
         enrichChapterSummary(projectId, summary, content, normalizedCanonUpdates);
+        summary.setNewFacts(facts.stream().map(item -> String.valueOf(item.getOrDefault("statement", ""))).toList());
 
         List<Map<String, Object>> proposals = detectProposals(projectId, content);
 
         return Map.of(
                 "summary", summaryToMap(summary),
                 "facts", facts,
+                "pending_facts", canonUpdates.getOrDefault("pending_facts", List.of()),
                 "timeline_events", canonUpdates.getOrDefault("timeline_events", List.of()),
                 "character_states", canonUpdates.getOrDefault("character_states", List.of()),
                 "proposals", proposals
@@ -2331,8 +2276,8 @@ public class Orchestrator {
         String combinedQuery = String.join(" ", seedEntities) + " "
                 + String.join(" ", plannedQueries) + " "
                 + (chapterGoal != null ? chapterGoal : "");
-        List<ContextItem> seedRelevantItems = selectEngine.retrievalSelect(
-                projectId, combinedQuery.trim(), List.of("character", "world", "fact", "summary", "text_chunk"), 24
+        List<ContextItem> seedRelevantItems = selectEngine.retrievalSelectForChapter(
+                projectId, chapter, combinedQuery.trim(), List.of("character", "world", "fact", "summary", "text_chunk"), 24
         );
         if (traceTiming) {
             stageTimings.put("initial_context_retrieval", elapsedMillis(stageStartedAt));
@@ -2814,13 +2759,11 @@ public class Orchestrator {
         long rerankMillis = 0L;
         if (!gapQuery.isBlank()) {
             long retrievalStartedAt = System.nanoTime();
-            List<ContextItem> gapItems = selectEngine.retrievalSelect(
-                    projectId,
+            List<ContextItem> gapItems = selectEngine.retrievalSelectForChapter(
+                    projectId, chapter,
                     gapQuery,
                     List.of("character", "world", "fact", "summary", "text_chunk"),
-                    roundIndex == 1 ? 16 : 12,
-                    recentChapters == null || recentChapters.isEmpty() ? null : recentChapters,
-                    List.of(chapter)
+                    roundIndex == 1 ? 16 : 12
             );
             retrievalMillis = elapsedMillis(retrievalStartedAt);
             for (ContextItem item : gapItems) {
@@ -2835,7 +2778,8 @@ public class Orchestrator {
                     projectId,
                     gapQuery,
                     roundIndex == 1 ? 8 : 6,
-                    recentChapters == null || recentChapters.isEmpty() ? null : recentChapters,
+                    draftStorage.writtenChaptersBefore(projectId, chapter).isEmpty()
+                            ? List.of("__no_previous_written_chapter__") : draftStorage.writtenChaptersBefore(projectId, chapter),
                     List.of(chapter),
                     false
             );
@@ -3293,7 +3237,7 @@ public class Orchestrator {
         List<Map<String, Object>> items = new ArrayList<>();
         for (String chapter : chapters.stream().filter(Objects::nonNull).distinct().toList()) {
             Map<String, Object> pack = memoryPackStorage.readPack(projectId, chapter);
-            if (pack == null || pack.isEmpty()) {
+            if (pack == null || pack.isEmpty() || Boolean.TRUE.equals(pack.get("context_stale"))) {
                 continue;
             }
             items.addAll(extractMemoryItems(chapter, pack, queries));
@@ -7357,7 +7301,7 @@ public class Orchestrator {
         String normalizedChapter = canonicalizeChapterId(chapter);
         try {
             Map<String, Object> existing = memoryPackStorage.readPack(projectId, normalizedChapter);
-            if (!forceRefresh && existing != null && !existing.isEmpty()) {
+            if (!forceRefresh && existing != null && !existing.isEmpty() && !Boolean.TRUE.equals(existing.get("context_stale"))) {
                 return existing;
             }
 

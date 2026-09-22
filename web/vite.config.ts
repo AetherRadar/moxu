@@ -7,13 +7,13 @@ import tailwindcss from '@tailwindcss/vite';
 
 /**
  * 手工分块。
- * 编辑器和动画库只在写作页用到，切出去后项目列表页首屏不必下载它们。
+ * 编辑器只在写作页下载。Radix 交给自动分块，避免全局 Tooltip
+ * 把 Dialog / Select / Menu 等未打开的控件一起带入首屏。
  * 用函数形式而非对象形式：Vite 8 的打包器只接受函数签名。
  */
 const VENDOR_CHUNKS: { name: string; test: RegExp }[] = [
   { name: 'editor', test: /node_modules[\\/]@?codemirror|node_modules[\\/]@lezer/ },
   { name: 'query', test: /node_modules[\\/]@tanstack[\\/]/ },
-  { name: 'radix', test: /node_modules[\\/]@radix-ui[\\/]/ },
   { name: 'react', test: /node_modules[\\/](react|react-dom|react-router|react-router-dom|scheduler)[\\/]/ },
 ];
 

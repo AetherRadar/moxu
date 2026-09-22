@@ -46,6 +46,35 @@ public class DraftStorage extends BaseStorage {
     private volatile TextChunkIndexCache textChunkIndexCache;
     
     // ========== 草稿操作 ==========
+
+    /** Explicit instructions win; otherwise inherit this chapter's plan, then its summary. */
+    public String resolveWritingGoal(String projectId, String chapter, String explicitGoal) {
+        if (explicitGoal != null && !explicitGoal.isBlank()) return explicitGoal.trim();
+        String canonical = canonicalizeChapterId(chapter);
+        if (!CHAPTER_ID_PATTERN.matcher(canonical).matches()) return "";
+        Path outline = getProjectPath(projectId).resolve("outline/chapters").resolve(canonical + ".yaml");
+        if (Files.exists(outline)) {
+            try {
+                Map<String, Object> data = readYamlAsMap(outline);
+                String content = Objects.toString(data.get("content"), "").trim();
+                if (!content.isBlank()) return content;
+            } catch (IOException e) {
+                log.warn("读取写作章纲失败: chapter={}, reason={}", canonical, e.getMessage());
+            }
+        }
+        return getChapterSummary(projectId, canonical).map(ChapterSummary::getBriefSummary).orElse("");
+    }
+
+    /** Planning creates empty drafts; those summaries are not past events. */
+    public List<String> writtenChaptersBefore(String projectId, String chapter) {
+        String current = canonicalizeChapterId(chapter);
+        return listChapters(projectId).stream()
+                .filter(id -> compareChapterIds(id, current) < 0)
+                .filter(id -> {
+                    try { return Files.size(getFinalPath(projectId, id)) > 0; }
+                    catch (IOException e) { return false; }
+                }).toList();
+    }
     
     public Draft saveCurrentDraft(String projectId, String chapter, String content, 
                                    Integer wordCount, List<String> pendingConfirmations,
@@ -668,6 +697,22 @@ public class DraftStorage extends BaseStorage {
         String canonical = canonicalizeChapterId(chapter);
         Path filePath = getProjectPath(projectId).resolve("drafts").resolve(canonical).resolve("conflict_report.yaml");
         writeYaml(filePath, report);
+    }
+
+    public void saveAnalysisReview(String projectId, String chapter, Map<String, Object> review) throws IOException {
+        writeYaml(getProjectPath(projectId).resolve("drafts").resolve(canonicalizeChapterId(chapter))
+                .resolve("analysis_review.yaml"), review);
+    }
+
+    public void saveArchiveStatus(String projectId, String chapter, Map<String, Object> status) throws IOException {
+        writeYaml(getProjectPath(projectId).resolve("drafts").resolve(canonicalizeChapterId(chapter))
+                .resolve("archive_status.yaml"), status);
+    }
+
+    public Map<String, Object> getArchiveStatus(String projectId, String chapter) throws IOException {
+        Path path = getProjectPath(projectId).resolve("drafts").resolve(canonicalizeChapterId(chapter))
+                .resolve("archive_status.yaml");
+        return Files.exists(path) ? readYamlAsMap(path) : Map.of("status", "not_run", "chapter", chapter);
     }
 
     // ========== 分卷摘要 ==========

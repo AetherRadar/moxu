@@ -3,12 +3,7 @@ import { useMutation } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { CheckCircle2, FlaskConical, Pencil, Plus, Trash2, XCircle } from 'lucide-react';
 import { configApi } from '@/api';
-import type {
-  DeAiRewriteConfig,
-  JsonRecord,
-  LlmProfile,
-  LlmProviderMeta,
-} from '@/api/types';
+import type { DeAiRewriteConfig, JsonRecord, LlmProfile, LlmProviderMeta } from '@/api/types';
 import { ApiError } from '@/lib/http';
 import {
   Badge,
@@ -153,12 +148,7 @@ function ProfilesTab(): ReactNode {
             <Button tone="ghost" size="xs" icon={<Pencil />} onClick={() => setEditing(profile)}>
               改
             </Button>
-            <Button
-              tone="dangerGhost"
-              size="xs"
-              icon={<Trash2 />}
-              onClick={() => setDeleting(profile)}
-            >
+            <Button tone="dangerGhost" size="xs" icon={<Trash2 />} onClick={() => setDeleting(profile)}>
               删
             </Button>
           </div>
@@ -212,6 +202,7 @@ function ProfileForm({
     api_key: initial.api_key ?? '',
     model: initial.model ?? '',
     api_style: String(initial.api_style ?? ''),
+    compatibility_mode: initial.compatibility_mode === true,
     max_tokens: String(initial.max_tokens ?? ''),
     temperature: String(initial.temperature ?? ''),
   });
@@ -259,6 +250,7 @@ function ProfileForm({
     api_key: form.api_key.trim() || undefined,
     model: form.model.trim() || undefined,
     api_style: form.api_style || undefined,
+    compatibility_mode: form.compatibility_mode,
     max_tokens: form.max_tokens === '' ? undefined : Number(form.max_tokens),
     temperature: form.temperature === '' ? undefined : Number(form.temperature),
   });
@@ -311,12 +303,7 @@ function ProfileForm({
             placeholder="模型名，如 gpt-4o / deepseek-chat"
             className="flex-1"
           />
-          <Button
-            tone="ghost"
-            size="xs"
-            loading={fetchModels.isPending}
-            onClick={() => fetchModels.mutate()}
-          >
+          <Button tone="ghost" size="xs" loading={fetchModels.isPending} onClick={() => fetchModels.mutate()}>
             拉模型列表
           </Button>
         </div>
@@ -333,6 +320,14 @@ function ProfileForm({
         </label>
       )}
 
+      {form.provider !== 'mock' && form.provider !== 'anthropic' && form.api_style !== 'responses' && (
+        <Switch
+          label="中转兼容模式"
+          hint="接口断连时可尝试：使用模型默认采样参数，生成完成后一次返回内容。"
+          checked={form.compatibility_mode}
+          onCheckedChange={(compatibility_mode) => setForm((current) => ({ ...current, compatibility_mode }))}
+        />
+      )}
       <div className="grid grid-cols-2 gap-3">
         <Input
           value={form.max_tokens}
@@ -489,8 +484,7 @@ function RewriteTab({ projectId }: { projectId: string }): ReactNode {
   if (config.isPending) return <SkeletonList rows={6} />;
 
   const current = draft ?? { ...DEFAULT_REWRITE, ...(config.data ?? {}) };
-  const set = (patch: Partial<DeAiRewriteConfig>): void =>
-    setDraft({ ...current, ...patch });
+  const set = (patch: Partial<DeAiRewriteConfig>): void => setDraft({ ...current, ...patch });
 
   return (
     <div className="flex flex-col">

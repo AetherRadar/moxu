@@ -2,6 +2,8 @@ import { type CSSProperties, type ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { useLayoutStore, layoutBounds } from '@/stores/layout';
+import { X } from 'lucide-react';
+import { IconButton } from '@/components/ui/Button';
 import { ActivityBar } from './ActivityBar';
 import { ResizeHandle } from './ResizeHandle';
 
@@ -27,6 +29,7 @@ export function AppShell({
   onOpenSettings: () => void;
 }): ReactNode {
   const sideVisible = useLayoutStore((state) => state.sideVisible);
+  const toggleSide = useLayoutStore((state) => state.toggleSide);
   const sideWidth = useLayoutStore((state) => state.sideWidth);
   const setSideWidth = useLayoutStore((state) => state.setSideWidth);
   const focusMode = useLayoutStore((state) => state.focusMode);
@@ -49,26 +52,37 @@ export function AppShell({
     >
       {titleBar}
 
-      <div className="flex min-h-0 flex-1">
+      <div className="relative flex min-h-0 flex-1">
         {!focusMode && <ActivityBar onOpenSettings={onOpenSettings} />}
 
         {showSide && (
           <>
             <aside
-              style={{ width: 'var(--side-w)' }}
-              className="min-w-0 shrink-0 overflow-hidden border-r border-ink-800 bg-ink-900"
+              style={{ width: 'min(var(--side-w), calc(100vw - 4.5rem))' }}
+              className="absolute inset-y-0 left-[4.5rem] z-20 min-w-0 shrink-0 overflow-hidden border-r border-ink-800 bg-sidebar shadow-panel md:static md:shadow-none sm:left-20"
             >
-              <ErrorBoundary>{side}</ErrorBoundary>
+              <div className="flex h-full min-h-0 flex-col">
+                <div className="flex justify-end border-b border-ink-800 p-1 md:hidden">
+                  <IconButton label="收起侧栏" size="lg" onClick={toggleSide}>
+                    <X />
+                  </IconButton>
+                </div>
+                <div className="min-h-0 flex-1">
+                  <ErrorBoundary>{side}</ErrorBoundary>
+                </div>
+              </div>
             </aside>
-            <ResizeHandle
-              cssVar="--side-w"
-              direction="east"
-              min={layoutBounds.SIDE_MIN}
-              max={layoutBounds.SIDE_MAX}
-              defaultWidth={288}
-              onCommit={setSideWidth}
-              label="调整侧栏宽度"
-            />
+            <div className="hidden md:contents">
+              <ResizeHandle
+                cssVar="--side-w"
+                direction="east"
+                min={layoutBounds.SIDE_MIN}
+                max={layoutBounds.SIDE_MAX}
+                defaultWidth={288}
+                onCommit={setSideWidth}
+                label="调整侧栏宽度"
+              />
+            </div>
           </>
         )}
 

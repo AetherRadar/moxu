@@ -348,7 +348,8 @@ public class LlmGateway {
             case "mock" -> new MockProvider();
             // 其余（openai/custom/deepseek/qwen/gemini/grok/kimi/glm 及未知类型）统一走 OpenAI 兼容协议
             default -> new OpenAiProvider(apiKey, defaultBaseUrl(providerId, baseUrl), model, maxTokens, temperature,
-                    DEFAULT_BASE_URLS.containsKey(providerId) || "custom".equals(providerId) ? providerId : "openai");
+                    DEFAULT_BASE_URLS.containsKey(providerId) || "custom".equals(providerId) ? providerId : "openai",
+                    Boolean.parseBoolean(stringValue(profile.get("compatibility_mode"))));
         };
     }
 

@@ -1,6 +1,6 @@
 import { lazy, Suspense, type ReactNode } from 'react';
 import { createBrowserRouter, Navigate, RouterProvider } from 'react-router-dom';
-import { SkeletonList } from '@/components/ui';
+import { SkeletonList } from '@/components/ui/Feedback';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 
 /**
