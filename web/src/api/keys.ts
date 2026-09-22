@@ -14,11 +14,8 @@ export const qk = {
   projectStats: (projectId: string) => ['projects', projectId, 'stats'] as const,
 
   volumes: (projectId: string) => ['projects', projectId, 'volumes'] as const,
-  volume: (projectId: string, volumeId: string) => ['projects', projectId, 'volumes', volumeId] as const,
   volumeSummary: (projectId: string, volumeId: string) =>
     ['projects', projectId, 'volumes', volumeId, 'summary'] as const,
-  volumeStats: (projectId: string, volumeId: string) =>
-    ['projects', projectId, 'volumes', volumeId, 'stats'] as const,
 
   drafts: (projectId: string) => ['projects', projectId, 'drafts'] as const,
   draft: (projectId: string, chapter: string) => ['projects', projectId, 'drafts', chapter] as const,
@@ -28,12 +25,8 @@ export const qk = {
     ['projects', projectId, 'drafts', chapter, 'versions'] as const,
   draftFinal: (projectId: string, chapter: string) =>
     ['projects', projectId, 'drafts', chapter, 'final'] as const,
-  draftReview: (projectId: string, chapter: string) =>
-    ['projects', projectId, 'drafts', chapter, 'review'] as const,
   sceneBrief: (projectId: string, chapter: string) =>
     ['projects', projectId, 'drafts', chapter, 'scene-brief'] as const,
-  chapterSummary: (projectId: string, chapter: string) =>
-    ['projects', projectId, 'drafts', chapter, 'summary'] as const,
   chapterSummaries: (projectId: string, volumeId?: string) =>
     ['projects', projectId, 'drafts', 'summaries', volumeId ?? 'all'] as const,
   rewriteConfig: (projectId: string) => ['projects', projectId, 'rewrite-config'] as const,
@@ -41,24 +34,16 @@ export const qk = {
   outline: (projectId: string) => ['projects', projectId, 'outline'] as const,
 
   characterCards: (projectId: string) => ['projects', projectId, 'cards', 'characters'] as const,
-  characterCard: (projectId: string, name: string) =>
-    ['projects', projectId, 'cards', 'characters', name] as const,
   worldCards: (projectId: string) => ['projects', projectId, 'cards', 'world'] as const,
-  worldCard: (projectId: string, name: string) => ['projects', projectId, 'cards', 'world', name] as const,
   styleCard: (projectId: string) => ['projects', projectId, 'cards', 'style'] as const,
   extractCapabilities: (projectId: string) =>
     ['projects', projectId, 'cards', 'extract-candidates'] as const,
 
   facts: (projectId: string) => ['projects', projectId, 'canon', 'facts'] as const,
-  fact: (projectId: string, factId: string) => ['projects', projectId, 'canon', 'facts', factId] as const,
-  factsByChapter: (projectId: string, chapter: string) =>
-    ['projects', projectId, 'canon', 'facts', 'chapter', chapter] as const,
   factsTree: (projectId: string) => ['projects', projectId, 'facts', 'tree'] as const,
   timeline: (projectId: string, chapter?: string) =>
     ['projects', projectId, 'canon', 'timeline', chapter ?? 'all'] as const,
   characterStates: (projectId: string) => ['projects', projectId, 'canon', 'character-state'] as const,
-  characterState: (projectId: string, name: string) =>
-    ['projects', projectId, 'canon', 'character-state', name] as const,
 
   bindings: (projectId: string, chapter: string) => ['projects', projectId, 'bindings', chapter] as const,
   memoryPack: (projectId: string, chapter: string) =>

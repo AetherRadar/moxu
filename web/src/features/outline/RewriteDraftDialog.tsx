@@ -70,7 +70,6 @@ export function RewriteDraftDialog({
     mutationFn: (content: string) => draftsApi.updateContent(projectId, chapterId, { content }),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: qk.draft(projectId, chapterId) });
-      void client.invalidateQueries({ queryKey: qk.draftReview(projectId, chapterId) });
       void client.invalidateQueries({ queryKey: qk.chapterSummaries(projectId) });
       toast.success('已按纲重构并保存');
       onClose();

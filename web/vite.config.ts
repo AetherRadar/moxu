@@ -12,7 +12,6 @@ import tailwindcss from '@tailwindcss/vite';
  */
 const VENDOR_CHUNKS: { name: string; test: RegExp }[] = [
   { name: 'editor', test: /node_modules[\\/]@?codemirror|node_modules[\\/]@lezer/ },
-  { name: 'motion', test: /node_modules[\\/](motion|framer-motion)[\\/]/ },
   { name: 'query', test: /node_modules[\\/]@tanstack[\\/]/ },
   { name: 'radix', test: /node_modules[\\/]@radix-ui[\\/]/ },
   { name: 'react', test: /node_modules[\\/](react|react-dom|react-router|react-router-dom|scheduler)[\\/]/ },

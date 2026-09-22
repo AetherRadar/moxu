@@ -106,24 +106,6 @@ export interface SceneBrief {
   forbidden: string[];
 }
 
-export type IssueSeverity = 'high' | 'medium' | 'low' | (string & {});
-
-export interface Issue {
-  severity: IssueSeverity;
-  category: string | null;
-  location: string | null;
-  problem: string | null;
-  suggestion: string | null;
-}
-
-export interface ReviewResult {
-  chapter: string;
-  draft_version: string | null;
-  issues: Issue[];
-  overall_assessment: string | null;
-  can_proceed: boolean;
-}
-
 // ── 卡片 ────────────────────────────────────────────────────────────
 
 export interface CharacterCard {
