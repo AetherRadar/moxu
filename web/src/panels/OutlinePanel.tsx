@@ -28,7 +28,7 @@ import {
 import { LazyOverlay } from '@/components/ui/LazyOverlay';
 import { ApiError } from '@/lib/http';
 import { formatChapterLabel, formatVolumeLabel } from '@/lib/chapter-id';
-import { useChapterTree } from '@/features/chapters/queries';
+import { useChapterTree, useSaveVolumeSummary, useVolumeSummary } from '@/features/chapters/queries';
 import type { ChapterNode } from '@/features/chapters/tree';
 import {
   outlineContent,
@@ -454,8 +454,69 @@ function VolumeOutlineSection({
           >
             按分卷纲拆成章节规划
           </Button>
+          <VolumeSummaryEditor projectId={projectId} volumeId={volumeId} />
         </div>
       )}
+    </section>
+  );
+}
+
+/** 卷摘要：模型在归档时会重算，这里允许作者直接改写落点。 */
+function VolumeSummaryEditor({ projectId, volumeId }: { projectId: string; volumeId: string }): ReactNode {
+  const summary = useVolumeSummary(projectId, volumeId, true);
+  const save = useSaveVolumeSummary(projectId, volumeId);
+  const [text, setText] = useState('');
+  const [dirty, setDirty] = useState(false);
+
+  // 摘要是外部生成的：用户没动过才跟着数据走
+  useEffect(() => {
+    if (!dirty && summary.data !== undefined) setText(summary.data.brief_summary ?? '');
+  }, [summary.data, dirty]);
+
+  return (
+    <section className="flex flex-col gap-2 rounded-md border border-ink-800 bg-ink-900/40 p-2.5">
+      <div className="flex items-center gap-2">
+        <span className="text-2xs font-medium text-ink-300">卷摘要</span>
+        {summary.isPending ? (
+          <SkeletonList rows={1} className="flex-1" />
+        ) : summary.isError ? (
+          <span className="text-2xs text-ink-600">还没有摘要</span>
+        ) : (
+          <span className="text-2xs text-ink-600">
+            {summary.data?.chapter_count ?? 0} 章 ·{' '}
+            {(summary.data?.updated_at ?? '').replace('T', ' ').slice(0, 16)}
+          </span>
+        )}
+        <Button
+          tone="primary"
+          size="xs"
+          className="ml-auto"
+          loading={save.isPending}
+          disabled={text.trim() === ''}
+          onClick={() =>
+            save.mutate({
+              volume_id: volumeId,
+              brief_summary: text.trim(),
+              key_themes: summary.data?.key_themes ?? [],
+              major_events: summary.data?.major_events ?? [],
+              chapter_count: summary.data?.chapter_count ?? 0,
+              created_at: summary.data?.created_at ?? null,
+              updated_at: summary.data?.updated_at ?? null,
+            })
+          }
+        >
+          保存摘要
+        </Button>
+      </div>
+      <Textarea
+        value={text}
+        onChange={(event) => {
+          setText(event.target.value);
+          setDirty(true);
+        }}
+        rows={3}
+        placeholder="这一卷发生了什么、留下了什么钩子…"
+      />
     </section>
   );
 }

@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { draftsApi, projectScope, qk, volumesApi } from '@/api';
-import type { ChapterSummary, VolumeCreateRequest } from '@/api/types';
+import type { ChapterSummary, VolumeCreateRequest, VolumeSummary } from '@/api/types';
 import { ApiError } from '@/lib/http';
 import { nextChapterId, type ChapterKind } from '@/lib/chapter-id';
 import { buildChapterTree, flatChapterIds, type VolumeNode } from './tree';
@@ -45,8 +45,7 @@ export function useChapterTree(projectId: string): ChapterTreeResult {
   });
 
   const volumes = useMemo(
-    () =>
-      buildChapterTree(volumesQuery.data ?? [], chaptersQuery.data ?? [], summariesQuery.data ?? []),
+    () => buildChapterTree(volumesQuery.data ?? [], chaptersQuery.data ?? [], summariesQuery.data ?? []),
     [volumesQuery.data, chaptersQuery.data, summariesQuery.data],
   );
 
@@ -209,5 +208,27 @@ export function useDeleteVolume(projectId: string) {
       toast.success('分卷已删除');
     },
     onError: (error) => toast.error(reason(error, '删除分卷失败')),
+  });
+}
+
+/** 卷摘要：可能还没生成过，404 当空处理。 */
+export function useVolumeSummary(projectId: string, volumeId: string, enabled: boolean) {
+  return useQuery({
+    queryKey: qk.volumeSummary(projectId, volumeId),
+    queryFn: () => volumesApi.summary(projectId, volumeId),
+    enabled: enabled && projectId !== '' && volumeId !== '',
+    retry: (count, error) => !(error instanceof ApiError && error.isNotFound) && count < 2,
+  });
+}
+
+export function useSaveVolumeSummary(projectId: string, volumeId: string) {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: (body: VolumeSummary) => volumesApi.saveSummary(projectId, volumeId, body),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: qk.volumeSummary(projectId, volumeId) });
+      toast.success('卷摘要已保存');
+    },
+    onError: (error) => toast.error(reason(error, '保存卷摘要失败')),
   });
 }
