@@ -21,10 +21,6 @@ export const canonApi = {
   createFact: (projectId: string, body: Partial<Fact>) =>
     http.post<Fact>(`${base(projectId)}/facts`, { body }),
 
-  /** 手工录入：跳过来源校验，origin 标记为人工。 */
-  createFactManual: (projectId: string, body: Partial<Fact>) =>
-    http.post<Fact>(`${base(projectId)}/facts/manual`, { body }),
-
   updateFact: (projectId: string, factId: string, body: Partial<Fact>) =>
     http.put<Fact>(`${base(projectId)}/facts/by-id/${seg(factId)}`, { body }),
 

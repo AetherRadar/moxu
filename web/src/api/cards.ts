@@ -59,6 +59,13 @@ export const cardsApi = {
   generateDescription: (projectId: string, body: JsonRecord, signal?: AbortSignal) =>
     http.post<JsonRecord>(`${base(projectId)}/generate`, { body, timeout: Timeout.llm, signal }),
 
+  /**
+   * 从大纲文本抽卡（POST /cards/extract-from-outline）。
+   *
+   * @deprecated 与 extract-candidates 语义重复：ExtractCardsDialog 一直把总纲和
+   * 分卷纲自动并入材料，capabilities 也只声明 character/world/style 三个模块，
+   * 没有独立的大纲模块。走 extractCandidates({module}) 即可，不再接线此端点。
+   */
   extractFromOutline: (projectId: string, body: JsonRecord, signal?: AbortSignal) =>
     http.post<JsonRecord>(`${base(projectId)}/extract-from-outline`, {
       body,

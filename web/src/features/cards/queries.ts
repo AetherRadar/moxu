@@ -136,7 +136,7 @@ export function useSaveFact(projectId: string) {
   const client = useQueryClient();
   return useMutation({
     mutationFn: ({ id, fact, create }: { id: string; fact: Partial<Fact>; create?: boolean }) =>
-      create ? canonApi.createFactManual(projectId, fact) : canonApi.updateFact(projectId, id, fact),
+      create ? canonApi.createFact(projectId, fact) : canonApi.updateFact(projectId, id, fact),
     onSuccess: () => {
       void client.invalidateQueries({ queryKey: qk.facts(projectId) });
       void client.invalidateQueries({ queryKey: qk.factsTree(projectId) });

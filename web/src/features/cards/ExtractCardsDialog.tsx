@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { AlertTriangle, CheckCircle2, FileScan } from 'lucide-react';
 import { cardsApi, draftsApi, outlineApi, qk } from '@/api';
@@ -8,7 +8,12 @@ import { ApiError } from '@/lib/http';
 import { formatChapterLabel } from '@/lib/chapter-id';
 import { Badge, Button, Dialog, EmptyState, Textarea } from '@/components/ui';
 import { useChapterTree } from '@/features/chapters/queries';
-import { useSaveCharacterCard, useSaveStyleCard, useSaveWorldCard, useStyleCard } from '@/features/cards/queries';
+import {
+  useSaveCharacterCard,
+  useSaveStyleCard,
+  useSaveWorldCard,
+  useStyleCard,
+} from '@/features/cards/queries';
 
 type Module = 'character' | 'world' | 'style';
 
@@ -37,6 +42,9 @@ const MODULE_LABEL: Record<Module, string> = {
   world: '世界',
   style: '文风',
 };
+
+/** 接口失败时的兜底模块表；卡片入库端点也只认识这三种。 */
+const FALLBACK_MODULES: Module[] = ['character', 'world', 'style'];
 
 function reason(error: unknown, fallback: string): string {
   return error instanceof ApiError ? error.message : fallback;
@@ -76,6 +84,20 @@ export function ExtractCardsDialog({
   const allChapters = useMemo(() => tree.volumes.flatMap((v) => v.chapters), [tree.volumes]);
   const totalCards = results.character.length + results.world.length + results.style.length;
   const ran = running || totalCards > 0 || Object.keys(errors).length > 0;
+
+  // 模块勾选列表来自后端 capabilities；读不到就回退到内置三种（优雅降级）
+  const capabilities = useQuery({
+    queryKey: qk.extractCapabilities(projectId),
+    queryFn: () => cardsApi.extractCapabilities(projectId),
+    retry: false,
+    staleTime: Infinity,
+  });
+  const availableModules = useMemo<Module[]>(() => {
+    const raw = capabilities.data?.modules;
+    if (!Array.isArray(raw)) return FALLBACK_MODULES;
+    const known = raw.filter((item): item is Module => typeof item === 'string' && item in MODULE_LABEL);
+    return known.length > 0 ? known : FALLBACK_MODULES;
+  }, [capabilities.data]);
 
   const toggleModule = (module: Module): void => {
     setModules((current) => {
@@ -123,9 +145,7 @@ export function ExtractCardsDialog({
     }
 
     const chapterIds = [...pickedChapters];
-    const contents = await Promise.allSettled(
-      chapterIds.map((id) => draftsApi.latest(projectId, id)),
-    );
+    const contents = await Promise.allSettled(chapterIds.map((id) => draftsApi.latest(projectId, id)));
     contents.forEach((outcome, index) => {
       if (outcome.status === 'fulfilled' && outcome.value.content.trim() !== '') {
         const id = chapterIds[index] ?? '';
@@ -235,7 +255,7 @@ export function ExtractCardsDialog({
       {!ran ? (
         <div className="flex flex-col gap-3">
           <div className="flex gap-4">
-            {(Object.keys(MODULE_LABEL) as Module[]).map((module) => (
+            {availableModules.map((module) => (
               <label key={module} className="flex cursor-pointer items-center gap-1.5 text-xs text-ink-300">
                 <input
                   type="checkbox"
@@ -280,7 +300,7 @@ export function ExtractCardsDialog({
         </div>
       ) : (
         <div className="flex flex-col gap-3">
-          {(Object.keys(MODULE_LABEL) as Module[]).map((module) => {
+          {availableModules.map((module) => {
             const error = errors[module];
             const cards = results[module];
             if (!modules.has(module)) return null;
@@ -301,17 +321,12 @@ export function ExtractCardsDialog({
                     const key = `${module}:${card.name}`;
                     const done = adopted.has(key);
                     return (
-                      <div
-                        key={key}
-                        className="rounded-md border border-ink-800 bg-ink-900/50 px-3 py-2"
-                      >
+                      <div key={key} className="rounded-md border border-ink-800 bg-ink-900/50 px-3 py-2">
                         <div className="flex items-center gap-2">
                           <span className="min-w-0 flex-1 truncate text-xs font-medium text-ink-100">
                             {card.name}
                           </span>
-                          {card.evidence_verified && (
-                            <Badge tone="success">有原文依据</Badge>
-                          )}
+                          {card.evidence_verified && <Badge tone="success">有原文依据</Badge>}
                           {card.category !== '' && <Badge tone="outline">{card.category}</Badge>}
                           <Button
                             tone={done ? 'ghost' : 'primary'}
@@ -328,9 +343,7 @@ export function ExtractCardsDialog({
                           <p className="mt-1 text-2xs text-gamboge-400">待确认：{card.uncertainty}</p>
                         )}
                         {card.source_ids.length > 0 && (
-                          <p className="mt-1 text-2xs text-ink-600">
-                            来源：{card.source_ids.join('、')}
-                          </p>
+                          <p className="mt-1 text-2xs text-ink-600">来源：{card.source_ids.join('、')}</p>
                         )}
                       </div>
                     );
