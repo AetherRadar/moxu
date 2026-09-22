@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { draftsApi, qk } from '@/api';
@@ -72,9 +72,10 @@ export function SceneBriefDialog({
   const [forbidden, setForbidden] = useState('');
   const [loaded, setLoaded] = useState<SceneBrief | null>(null);
 
-  useEffect(() => {
+  // 数据到达时初始化表单：渲染期 setState 是 React 认可的「随 props 调整」模式，
+  // 比 useEffect 少一次提交，也不会被 strict 双跑弄脏。
+  if (brief.data !== undefined && loaded === null) {
     const data = brief.data;
-    if (data === undefined || loaded !== null) return;
     setLoaded(data);
     setGoal(data.goal ?? '');
     setConflict(data.conflict ?? '');
@@ -83,7 +84,7 @@ export function SceneBriefDialog({
     setFacts(linesToText(data.facts));
     setWorldConstraints(linesToText(data.world_constraints));
     setForbidden(linesToText(data.forbidden));
-  }, [brief.data, loaded]);
+  }
   const save = useMutation({
     mutationFn: () => {
       const current = loaded ?? EMPTY;

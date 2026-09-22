@@ -468,10 +468,13 @@ function VolumeSummaryEditor({ projectId, volumeId }: { projectId: string; volum
   const [text, setText] = useState('');
   const [dirty, setDirty] = useState(false);
 
-  // 摘要是外部生成的：用户没动过才跟着数据走
-  useEffect(() => {
+  // 摘要是外部生成的：用户没动过才跟着数据走。渲染期调整 state 代替 effect，
+  // 少一次提交也不会触发 cascading render。
+  const [synced, setSynced] = useState(summary.data);
+  if (summary.data !== synced) {
+    setSynced(summary.data);
     if (!dirty && summary.data !== undefined) setText(summary.data.brief_summary ?? '');
-  }, [summary.data, dirty]);
+  }
 
   return (
     <section className="flex flex-col gap-2 rounded-md border border-ink-800 bg-ink-900/40 p-2.5">

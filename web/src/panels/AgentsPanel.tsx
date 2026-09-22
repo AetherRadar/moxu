@@ -73,10 +73,16 @@ export function AgentsPanel(): ReactNode {
   const idRef = useRef(0);
   const [confirmCancel, setConfirmCancel] = useState(false);
 
-  // 全局链路事件流：连接即回放最近 100 条
+  // 换项目时清掉旧链路事件：渲染期调整 setState，ref 留给 effect 重置
+  const [prevProject, setPrevProject] = useState(projectId);
+  if (prevProject !== projectId) {
+    setPrevProject(projectId);
+    setEvents([]);
+  }
+
+  // 全局链路事件流：连接即回放最近 100 条；重连时顺带归零 id 计数
   useEffect(() => {
     idRef.current = 0;
-    setEvents([]);
     return subscribeWs(wsPath.trace(), {
       onMessage: (batch: WsEnvelope[]) => {
         setEvents((current) => {

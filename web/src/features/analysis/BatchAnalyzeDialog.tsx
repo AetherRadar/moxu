@@ -58,7 +58,8 @@ export function BatchAnalyzeDialog({
   const [results, setResults] = useState<BatchResult[] | null>(null);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [activity, setActivity] = useState('');
-  const [running, setRunning] = useState<'idle' | 'batch' | 'saving'>('idle');
+  // 打开即开跑：初值就是 batch，mount effect 只负责发起外部请求
+  const [running, setRunning] = useState<'idle' | 'batch' | 'saving'>('batch');
 
   // Live activity line: batch analysis is one long request, so per-chapter granularity
   // only lands with the response; the trace feed is the in-flight signal.
@@ -162,12 +163,6 @@ export function BatchAnalyzeDialog({
   const ids = useMemo(() => chapters.map((chapter) => chapter.id), [chapters]);
   const useSync = ids.length <= SYNC_THRESHOLD;
 
-  const start = (): void => {
-    setRunning('batch');
-    if (useSync) runSync.mutate(ids);
-    else runBatch.mutate(ids);
-  };
-
   const retryFailed = (): void => {
     const failed = ids.filter((id) => rows.get(id) === 'failed');
     if (failed.length === 0) return;
@@ -180,7 +175,8 @@ export function BatchAnalyzeDialog({
   const busy = running !== 'idle';
   // Start on open; closing mid-run aborts the in-flight request.
   useEffect(() => {
-    start();
+    if (useSync) runSync.mutate(ids);
+    else runBatch.mutate(ids);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

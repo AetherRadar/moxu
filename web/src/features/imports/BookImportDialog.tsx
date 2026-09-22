@@ -150,7 +150,8 @@ export function BookImportDialog({
   };
 
   // ── 预览态的勾选模型 ──────────────────────────────────────────────
-  const volumes = preview?.volumes ?? [];
+  // useMemo 稳住引用：否则下游两个 useMemo 每渲染都重算
+  const volumes = useMemo(() => preview?.volumes ?? [], [preview]);
 
   const selectedCount = useMemo(() => {
     let total = 0;

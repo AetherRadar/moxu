@@ -86,13 +86,15 @@ function ChapterEditor({ projectId, chapter }: { projectId: string; chapter: str
   const [selection, setSelection] = useState<EditorSelection>({ from: 0, to: 0, text: '' });
   const [dialog, setDialog] = useState<'session' | 'suggest' | 'versions' | 'brief' | 'rewrite' | null>(null);
 
-  titleRef.current = title;
+  // ref 只能挂在提交后：渲染期写 ref 会破坏并发渲染的回滚语义
+  useEffect(() => {
+    titleRef.current = title;
+  }, [title]);
 
   // 章节树可能比编辑器晚到；用户没动过标题才跟着外部数据走
   useEffect(() => {
     if (!titleDirty.current && chapterNode?.title !== undefined && chapterNode.title !== title) {
       setTitle(chapterNode.title);
-      titleRef.current = chapterNode.title;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chapterNode?.title]);
@@ -171,6 +173,9 @@ function ChapterEditor({ projectId, chapter }: { projectId: string; chapter: str
 
   // Ctrl/Cmd+S 手动保存；切走/关页前把脏内容冲掉
   useEffect(() => {
+    // 句柄对象本身稳定（useImperativeHandle 空依赖），effect 起头捕获，
+    // cleanup 里再读 ref.current 会被 lint 判成"可能已变"的旧值
+    const editor = editorRef.current;
     const onKey = (event: KeyboardEvent): void => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
         event.preventDefault();
@@ -178,14 +183,16 @@ function ChapterEditor({ projectId, chapter }: { projectId: string; chapter: str
       }
     };
     const onUnload = (): void => {
-      if (!dirtyRef.current || editorRef.current === null) return;
+      if (!dirtyRef.current || editor === null) return;
       // 同步 XHR 已死路一条，keepalive fetch 尽力而为（body 上限 64KB，超长章丢弃不补）
-      void draftsApi.autosave(
-        projectId,
-        chapter,
-        { content: editorRef.current.getDoc(), title: titleRef.current },
-        { keepalive: true },
-      ).catch(() => undefined);
+      void draftsApi
+        .autosave(
+          projectId,
+          chapter,
+          { content: editor.getDoc(), title: titleRef.current },
+          { keepalive: true },
+        )
+        .catch(() => undefined);
     };
     window.addEventListener('keydown', onKey);
     window.addEventListener('beforeunload', onUnload);
@@ -195,10 +202,10 @@ function ChapterEditor({ projectId, chapter }: { projectId: string; chapter: str
       window.clearTimeout(timerRef.current);
       abortRef.current?.abort();
       // 切章节时未保存的内容也冲掉
-      if (dirtyRef.current && editorRef.current !== null) {
+      if (dirtyRef.current && editor !== null) {
         void draftsApi
           .autosave(projectId, chapter, {
-            content: editorRef.current.getDoc(),
+            content: editor.getDoc(),
             title: titleRef.current,
           })
           .catch(() => undefined);
@@ -219,9 +226,14 @@ function ChapterEditor({ projectId, chapter }: { projectId: string; chapter: str
   const isNew = draft.isError && draft.error instanceof ApiError && draft.error.status === 404;
   const initialDoc = isNew ? '' : (draft.data?.content ?? '');
 
-  // 加载完成的正文同步进本地计数；之后每次改动由 onDocChange 接管。
-  // 必须放在 early return 之前：hooks 顺序不能随 isPending/isError 分支变化。
-  useEffect(() => setDoc(initialDoc), [initialDoc]);
+  // 加载完成的正文同步进字数统计；之后每次改动由 onDocChange 接管。
+  // 两条都要放在 early return 之前（hooks 顺序不能随 isPending/isError 分支变化）：
+  // 渲染期 setState 是「随 props 调整」的推荐写法，不用 effect。
+  const [syncedDoc, setSyncedDoc] = useState(initialDoc);
+  if (initialDoc !== syncedDoc) {
+    setSyncedDoc(initialDoc);
+    setDoc(initialDoc);
+  }
 
   if (draft.isPending) {
     return (
