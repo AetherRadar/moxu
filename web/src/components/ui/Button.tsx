@@ -24,6 +24,8 @@ const buttonClass = variants({
       /** 破坏性操作 */
       danger: 'bg-cinnabar-600 text-white hover:bg-cinnabar-500',
       dangerGhost: 'text-cinnabar-400 hover:bg-cinnabar-900/40 hover:text-cinnabar-300',
+      /** 安全确认型操作（采用/完成） */
+      success: 'bg-malachite-500 text-white hover:bg-malachite-400',
     },
     size: {
       xs: 'h-6 px-2 text-2xs',
@@ -35,7 +37,7 @@ const buttonClass = variants({
   defaults: { tone: 'default', size: 'md' },
 });
 
-type Tone = 'primary' | 'default' | 'ghost' | 'outline' | 'danger' | 'dangerGhost';
+type Tone = 'primary' | 'default' | 'ghost' | 'outline' | 'danger' | 'dangerGhost' | 'success';
 type Size = 'xs' | 'sm' | 'md' | 'lg';
 
 export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'children'> {

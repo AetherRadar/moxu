@@ -1,5 +1,10 @@
 # MoXu 全书分析降本提效 TODO
 
+> **2026-09-23 实现状态**：下方 14 项路线图已有对应 Java 实现或现有能力补齐，
+> 勾选仅表示工程实现，不表示真实模型效果已验收。当前接口、开关、限制与验证流程见
+> [Java 分析任务与降本验证](ANALYSIS_EFFICIENCY.md)。合并抽取默认关闭，按需启用。
+> - [ ] 真实 100 章同模型基线、50% token / 40% P95 目标及人工事实质量验收。
+
 > **历史说明**：本文写于旧 Python 后端时期，文中 `backend/app/...` 代码路径均已不存在。
 > 当前 Java 后端对应实现在 `backend-java/src/main/java/com/moxu/`（分析链路见
 > `SessionController` 的 analyze / analyze-batch / analyze-sync 与 `ArchivistAgent`）。
@@ -167,16 +172,16 @@
 
 ## P0：观测与护栏（必须先做）
 
-- [ ] 建立按阶段 token 统计
+- [x] 建立按阶段 token 统计
   - 维度：`chapter_summary_tokens`、`canon_tokens`、`focus_binding_tokens`、`rerank_tokens`
   - 触点：`backend/app/agents/base.py:110`、`backend/app/llm_gateway/providers/custom_provider.py:45`
   - 输出：`analysis/cost_ledger.ndjson`
 
-- [ ] 建立批量任务 KPI 日志
+- [x] 建立批量任务 KPI 日志
   - 指标：每章耗时、每章调用次数、跳过章节数、累计 token
   - 触点：`backend/app/orchestrator/_analysis_mixin.py:203`
 
-- [ ] 加入批量预算护栏与中断续跑
+- [x] 加入批量预算护栏与中断续跑
   - 达到预算阈值后停止，并记录下一个待处理章节
 
 验收：
@@ -184,19 +189,19 @@
 
 ## P1：低风险立竿见影优化
 
-- [ ] 增量分析：章节哈希跳过未变更章节
+- [x] 增量分析：章节哈希跳过未变更章节
   - 触点：`_build_analysis()`、`analyze_sync()`、`analyze_batch()`
   - 风险：哈希逻辑需包含标题变化（可单独 `title_hash`）
 
-- [ ] 批量模式默认关闭 LLM 重点角色绑定
+- [x] 批量模式默认关闭 LLM 重点角色绑定
   - 保留算法绑定兜底
   - 触点：`backend/app/orchestrator/_analysis_mixin.py:275`
 
-- [ ] 批量模式默认关闭 semantic rerank
+- [x] 批量模式默认关闭 semantic rerank
   - 仅对低置信章节按需开启
   - 触点：`backend/config.yaml:85`
 
-- [ ] 精简抽取提示词模板（compact mode）
+- [x] 精简抽取提示词模板（compact mode）
   - 保留强约束，减少重复 schema 区块
   - 触点：`backend/app/prompts.py`（canon/chapter summary）
 
@@ -205,19 +210,19 @@
 
 ## P2：结构级优化（核心收益）
 
-- [ ] 合并“章节摘要 + canon 更新”为单次抽取调用
+- [x] 合并“章节摘要 + canon 更新”为单次抽取调用
   - 当前 2 次/章，目标 1 次/章
   - 触点：`backend/app/orchestrator/_analysis_mixin.py:143`
 
-- [ ] 引入“确定性章节预摘要（LLM-free）”
+- [x] 引入“确定性章节预摘要（LLM-free）”
   - 复用 `_build_chapter_digest()` 思路，先产出结构化 digest
   - 触点：`backend/app/orchestrator/_context_mixin.py:420`
 
-- [ ] 建立 Map-Reduce 全书摘要链路
+- [x] 建立 Map-Reduce 全书摘要链路
   - Map：每章 deterministic digest
   - Reduce：按卷/按批 LLM 汇总，不再逐章全文多次抽取
 
-- [ ] 低置信回补机制
+- [x] 低置信回补机制
   - 只对异常章节二次抽取，而不是全量二次跑
 
 验收：
@@ -225,13 +230,13 @@
 
 ## P3：续写/改写长期优化
 
-- [ ] 改写采用“分支影响范围重算”
+- [x] 改写采用“分支影响范围重算”
   - 从 N 章改写，仅重算受影响章节，不重算全书
 
-- [ ] 卷摘要改为增量更新
+- [x] 卷摘要改为增量更新
   - 仅当该卷章节摘要变更时刷新
 
-- [ ] Writer 输入收敛
+- [x] Writer 输入收敛
   - 已有 `working_memory` 时减少 raw cards/facts 堆叠
   - 控制上下文膨胀
 

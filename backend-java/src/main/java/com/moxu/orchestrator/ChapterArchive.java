@@ -24,13 +24,19 @@ public final class ChapterArchive {
     public Map<String, Object> run(String project, String chapter, String content, String title,
                                    Consumer<String> progress) throws Exception {
         String fingerprint = hash(content);
+        String titleHash = hash(title == null ? "" : title);
         Map<String, Object> previous = drafts.getArchiveStatus(project, chapter);
         Map<String, Object> status = fingerprint.equals(previous.get("content_hash"))
                 ? new LinkedHashMap<>(previous) : new LinkedHashMap<>();
         Map<String, Object> stages = new LinkedHashMap<>();
         if (status.get("stages") instanceof Map<?, ?> saved) saved.forEach((key, value) -> stages.put(key.toString(), value));
+        if (!titleHash.equals(status.get("title_hash"))) {
+            stages.remove("summary");
+            stages.remove("volume");
+        }
         status.put("chapter", chapter);
         status.put("content_hash", fingerprint);
+        status.put("title_hash", titleHash);
         status.put("status", "running");
         status.put("stages", stages);
         persist(project, chapter, status);
@@ -40,9 +46,12 @@ public final class ChapterArchive {
             if (summary == null || "fallback".equals(summary.getGenerationStatus())) {
                 throw new IllegalStateException("摘要生成失败，原有摘要已保留");
             }
-            summary.setNewFacts(List.of());
+            summary.setNewFacts(complete(stages, "canon")
+                    ? drafts.getChapterSummary(project, chapter).map(ChapterSummary::getNewFacts).orElse(List.of())
+                    : List.of());
             summary.setChapter(chapter); summary.setTitle(title); summary.setVolumeId(volume); summary.setWordCount(content.length());
             drafts.saveChapterSummary(project, summary);
+            memory.invalidateFrom(project, chapter);
         });
         stage(project, chapter, status, stages, "canon", "正在归档：事实与人物状态", progress, () -> {
             Map<String, Object> updates = CanonEvidenceGuard.apply(archivist.extractCanonUpdates(project, chapter, content), content);

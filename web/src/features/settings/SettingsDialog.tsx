@@ -1,8 +1,19 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { CheckCircle2, FlaskConical, Pencil, Plus, Trash2, XCircle } from 'lucide-react';
-import { configApi } from '@/api';
+import {
+  Check,
+  CheckCircle2,
+  ChevronDown,
+  FlaskConical,
+  Loader2,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Trash2,
+  XCircle,
+} from 'lucide-react';
+import { configApi, qk } from '@/api';
 import type { DeAiRewriteConfig, JsonRecord, LlmProfile, LlmProviderMeta } from '@/api/types';
 import { ApiError } from '@/lib/http';
 import {
@@ -11,7 +22,13 @@ import {
   ConfirmDialog,
   Dialog,
   EmptyState,
+  IconButton,
   Input,
+  Menu,
+  MenuContent,
+  MenuItem,
+  MenuSeparator,
+  MenuTrigger,
   Select,
   SkeletonList,
   Slider,
@@ -39,6 +56,7 @@ const AGENT_LABEL: Record<string, { label: string; hint: string }> = {
   writer: { label: '写手', hint: '正文起草与续写' },
   editor: { label: '编辑', hint: '审校、反馈与修订' },
   rewrite: { label: '改写', hint: '去味/润色用的通用模型通道' },
+  extractor: { label: '提取器', hint: '导入与卡片的结构化提取' },
 };
 
 function reason(error: unknown, fallback: string): string {
@@ -207,6 +225,10 @@ function ProfileForm({
     temperature: String(initial.temperature ?? ''),
   });
   const [testResult, setTestResult] = useState<JsonRecord | null>(null);
+  const [fetchedModels, setFetchedModels] = useState<string[]>(
+    Array.isArray(initial.models) ? (initial.models as string[]) : [],
+  );
+  const [modelMenuOpen, setModelMenuOpen] = useState(false);
 
   const meta = providers.find((p) => p.id === form.provider);
   const fields = (meta?.fields as string[] | undefined) ?? ['base_url', 'api_key', 'model'];
@@ -233,8 +255,8 @@ function ProfileForm({
     onSuccess: (data) => {
       const models = (data.models as string[] | undefined) ?? (data.data as string[] | undefined) ?? [];
       if (models.length > 0) {
-        setForm((f) => ({ ...f, model: f.model !== '' ? f.model : (models[0] ?? f.model) }));
-        toast.success(`拉到 ${models.length} 个模型，已填入第一个`);
+        setFetchedModels(models);
+        toast.success(`拉到 ${models.length} 个模型`);
       } else {
         toast.info('没拉到模型列表，手填一个吧');
       }
@@ -249,6 +271,7 @@ function ProfileForm({
     base_url: form.base_url.trim() || undefined,
     api_key: form.api_key.trim() || undefined,
     model: form.model.trim() || undefined,
+    models: fetchedModels.length > 0 ? fetchedModels : undefined,
     api_style: form.api_style || undefined,
     compatibility_mode: form.compatibility_mode,
     max_tokens: form.max_tokens === '' ? undefined : Number(form.max_tokens),
@@ -274,7 +297,10 @@ function ProfileForm({
         />
         <Select
           value={form.provider}
-          onValueChange={(value) => setForm((f) => ({ ...f, provider: value }))}
+          onValueChange={(value) => {
+            setFetchedModels([]);
+            setForm((f) => ({ ...f, provider: value }));
+          }}
           options={providerOptions}
         />
       </div>
@@ -282,7 +308,10 @@ function ProfileForm({
       {fields.includes('base_url') && (
         <Input
           value={form.base_url}
-          onChange={(event) => setForm((f) => ({ ...f, base_url: event.target.value }))}
+          onChange={(event) => {
+            setFetchedModels([]);
+            setForm((f) => ({ ...f, base_url: event.target.value }));
+          }}
           placeholder="base_url，如 https://api.openai.com/v1"
         />
       )}
@@ -290,7 +319,10 @@ function ProfileForm({
         <Input
           value={form.api_key}
           type="password"
-          onChange={(event) => setForm((f) => ({ ...f, api_key: event.target.value }))}
+          onChange={(event) => {
+            setFetchedModels([]);
+            setForm((f) => ({ ...f, api_key: event.target.value }));
+          }}
           placeholder="api_key"
           autoComplete="off"
         />
@@ -303,9 +335,46 @@ function ProfileForm({
             placeholder="模型名，如 gpt-4o / deepseek-chat"
             className="flex-1"
           />
-          <Button tone="ghost" size="xs" loading={fetchModels.isPending} onClick={() => fetchModels.mutate()}>
-            拉模型列表
-          </Button>
+          <Menu
+            open={modelMenuOpen}
+            onOpenChange={(open) => {
+              setModelMenuOpen(open);
+              if (open && fetchedModels.length === 0 && !fetchModels.isPending) {
+                fetchModels.mutate();
+              }
+            }}
+          >
+            <MenuTrigger asChild>
+              <Button tone="ghost" size="xs" icon={<ChevronDown />}>
+                模型列表
+              </Button>
+            </MenuTrigger>
+            <MenuContent align="end" className="max-h-64 w-72 overflow-y-auto">
+              {fetchModels.isPending ? (
+                <MenuItem disabled icon={<Loader2 className="animate-spin" />}>
+                  正在拉取…
+                </MenuItem>
+              ) : fetchedModels.length === 0 ? (
+                <MenuItem disabled>没拉到模型，直接手填</MenuItem>
+              ) : (
+                <>
+                  {fetchedModels.map((m) => (
+                    <MenuItem
+                      key={m}
+                      icon={form.model === m ? <Check /> : <span className="size-3.5" />}
+                      onSelect={() => setForm((f) => ({ ...f, model: m }))}
+                    >
+                      {m}
+                    </MenuItem>
+                  ))}
+                  <MenuSeparator />
+                  <MenuItem icon={<RefreshCw />} onSelect={() => fetchModels.mutate()}>
+                    重新拉取
+                  </MenuItem>
+                </>
+              )}
+            </MenuContent>
+          </Menu>
         </div>
       )}
       {fields.includes('api_style') && (
@@ -397,55 +466,151 @@ function ProfileForm({
 
 // ── 分工 ───────────────────────────────────────────────────────────
 
+// Radix Select 不允许空字符串的 Item value，空值用哨兵代替
+const PROFILE_NONE = '__default_profile__';
+const MODEL_INHERIT = '__profile_default__';
+
+type AgentEntry = { profile_id: string; model: string };
+
+function normalizeAgentEntry(value: unknown): AgentEntry {
+  if (typeof value === 'object' && value !== null) {
+    const record = value as JsonRecord;
+    return { profile_id: String(record.profile_id ?? ''), model: String(record.model ?? '') };
+  }
+  return { profile_id: String(value ?? ''), model: '' };
+}
+
 function AgentsTab(): ReactNode {
   const profiles = useLlmProfiles();
   const assignments = useLlmAssignments();
   const save = useSaveLlmAssignments();
-  const [draft, setDraft] = useState<Record<string, string> | null>(null);
+  const client = useQueryClient();
+  const [draft, setDraft] = useState<Record<string, AgentEntry> | null>(null);
+
+  /** 行内拉模型：写回档案的 models 字段，下次打开直接有候选 */
+  const fetchRowModels = useMutation({
+    mutationFn: async ({ agent, profile }: { agent: string; profile: LlmProfile }) => {
+      const data = await configApi.fetchModels({
+        provider: profile.provider,
+        base_url: profile.base_url || undefined,
+        api_key: profile.api_key || undefined,
+      });
+      const models = (data.models as string[] | undefined) ?? (data.data as string[] | undefined) ?? [];
+      return { agent, profile, models };
+    },
+    onSuccess: async ({ profile, models }) => {
+      if (models.length === 0) {
+        toast.info('没拉到模型列表，可直接手填');
+        return;
+      }
+      toast.success(`拉到 ${models.length} 个模型`);
+      try {
+        await configApi.saveProfile({ ...profile, models });
+        void client.invalidateQueries({ queryKey: qk.llmProfiles });
+      } catch {
+        // 列表没落盘也不影响本次选择
+      }
+    },
+    onError: (error) => toast.error(reason(error, '拉模型列表失败')),
+  });
 
   if (assignments.isPending || profiles.isPending) return <SkeletonList rows={4} />;
 
-  const current = draft ?? {
-    archivist: String(assignments.data?.archivist ?? ''),
-    writer: String(assignments.data?.writer ?? ''),
-    editor: String(assignments.data?.editor ?? ''),
-    rewrite: String(assignments.data?.rewrite ?? ''),
-  };
+  const current: Record<string, AgentEntry> =
+    draft ??
+    Object.fromEntries(
+      Object.keys(AGENT_LABEL).map(
+        (agent) => [agent, normalizeAgentEntry(assignments.data?.[agent])] as const,
+      ),
+    );
 
-  const options = [
-    { value: '', label: '（默认档案）' },
-    ...(profiles.data ?? []).map((profile) => ({
+  const profileList = profiles.data ?? [];
+  const profileOptions = [
+    { value: PROFILE_NONE, label: '（默认档案）' },
+    ...profileList.map((profile) => ({
       value: String(profile.id),
       label: `${profile.name}`,
       hint: `${profile.provider}${profile.model ? ` · ${profile.model}` : ''}`,
     })),
   ];
 
+  const setAgent = (agent: string, patch: Partial<AgentEntry>): void =>
+    setDraft({
+      ...current,
+      [agent]: { ...(current[agent] ?? { profile_id: '', model: '' }), ...patch },
+    });
+
   return (
     <div className="flex flex-col gap-1">
-      {Object.entries(AGENT_LABEL).map(([agent, meta]) => (
-        <div key={agent} className="flex items-center gap-3 py-1.5">
-          <div className="w-36 shrink-0">
-            <p className="text-xs text-ink-200">{meta.label}</p>
-            <p className="mt-0.5 text-2xs text-ink-600">{meta.hint}</p>
+      {Object.entries(AGENT_LABEL).map(([agent, meta]) => {
+        const entry = current[agent] ?? { profile_id: '', model: '' };
+        const profile = profileList.find((p) => String(p.id) === entry.profile_id);
+        const models = Array.isArray(profile?.models) ? profile.models : [];
+        const customMissing = entry.model !== '' && !models.includes(entry.model);
+        const canFetch = profile !== undefined && profile.provider !== 'mock';
+        return (
+          <div key={agent} className="flex items-center gap-2 py-1.5">
+            <div className="w-24 shrink-0">
+              <p className="text-xs text-ink-200">{meta.label}</p>
+              <p className="mt-0.5 text-2xs text-ink-600">{meta.hint}</p>
+            </div>
+            <Select
+              value={entry.profile_id === '' ? PROFILE_NONE : entry.profile_id}
+              onValueChange={(value) => setAgent(agent, { profile_id: value === PROFILE_NONE ? '' : value })}
+              options={profileOptions}
+              placeholder="选档案"
+              className="min-w-0 flex-1"
+            />
+            {models.length > 0 ? (
+              <Select
+                value={entry.model === '' ? MODEL_INHERIT : entry.model}
+                onValueChange={(value) => setAgent(agent, { model: value === MODEL_INHERIT ? '' : value })}
+                options={[
+                  {
+                    value: MODEL_INHERIT,
+                    label: profile?.model ? `档案默认 · ${profile.model}` : '档案默认模型',
+                  },
+                  ...models.map((m) => ({ value: m, label: m })),
+                  ...(customMissing ? [{ value: entry.model, label: `${entry.model}（手填）` }] : []),
+                ]}
+                className="w-48 shrink-0"
+              />
+            ) : (
+              <Input
+                value={entry.model}
+                onChange={(event) => setAgent(agent, { model: event.target.value })}
+                placeholder={profile?.model ? `默认 ${profile.model}` : '模型（可空用档案默认）'}
+                className="w-48 shrink-0"
+              />
+            )}
+            <IconButton
+              label="拉取该中转的模型列表"
+              size="sm"
+              disabled={!canFetch}
+              onClick={() => {
+                if (profile !== undefined) fetchRowModels.mutate({ agent, profile });
+              }}
+            >
+              {fetchRowModels.isPending && fetchRowModels.variables?.agent === agent ? (
+                <Loader2 className="animate-spin" />
+              ) : (
+                <RefreshCw />
+              )}
+            </IconButton>
           </div>
-          <Select
-            value={current[agent]}
-            onValueChange={(value) => setDraft({ ...current, [agent]: value })}
-            options={options}
-            placeholder="选档案"
-            className="flex-1"
-          />
-        </div>
-      ))}
-      <div className="mt-3 flex justify-end">
+        );
+      })}
+      <p className="mt-1 text-2xs text-ink-600">
+        模型列留空 = 用档案自带模型；同一档案可在不同分工挂不同模型。
+      </p>
+      <div className="mt-2 flex justify-end">
         <Button
           tone="primary"
           size="sm"
           loading={save.isPending}
           disabled={draft === null}
           onClick={() =>
-            save.mutate(current as Record<string, unknown>, {
+            save.mutate(current, {
               onSuccess: () => setDraft(null),
             })
           }

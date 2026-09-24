@@ -3,6 +3,8 @@ package com.moxu.llm;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.moxu.storage.ProjectStorage;
+import com.moxu.analysis.AnalysisContext;
+import com.moxu.analysis.AnalysisStorage;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -96,7 +98,7 @@ public class LlmGateway {
      */
     public LlmResponse chatOnce(List<Map<String, String>> messages, String providerId,
                                 Double temperature, Integer maxTokens) {
-        LlmResponse response = getProvider(providerId).chatOnce(messages, temperature, maxTokens);
+        LlmResponse response = measuredChat(getProvider(providerId), providerId, messages, temperature, maxTokens, true);
         totalRequests.incrementAndGet();
         totalTokens.addAndGet(response.getTotalTokens());
         log.info("LLM single chat completed: provider={}, model={}, elapsed={}ms, tokens={}",
@@ -127,7 +129,7 @@ public class LlmGateway {
             }
             try {
                 attempted++;
-                LlmResponse response = provider.chat(messages, temperature, maxTokens);
+                LlmResponse response = measuredChat(provider, providerId, messages, temperature, maxTokens, false);
 
                 totalRequests.incrementAndGet();
                 totalTokens.addAndGet(response.getTotalTokens());
@@ -137,6 +139,8 @@ public class LlmGateway {
                         response.getElapsedMs(), response.getTotalTokens());
 
                 return response;
+            } catch (AnalysisContext.Paused | java.io.UncheckedIOException e) {
+                throw e;
             } catch (Exception e) {
                 lastException = e;
                 var decision = LlmRetryCoordinator.decide(e, attempt);
@@ -152,6 +156,36 @@ public class LlmGateway {
         }
 
         throw new RuntimeException("LLM chat failed after " + attempted + " attempts", lastException);
+    }
+
+    private LlmResponse measuredChat(LlmProvider provider, String providerId, List<Map<String, String>> messages,
+                                    Double temperature, Integer maxTokens, boolean once) {
+        AnalysisContext.Ticket ticket = AnalysisContext.beforeCall(messages, maxTokens);
+        Integer limit = maxTokens;
+        if (AnalysisContext.options() != null && limit == null) limit = AnalysisContext.options().getMaxOutputTokens();
+        LlmResponse response;
+        try {
+            // Analysis retries are owned by this gateway, so hidden provider retries cannot evade the ledger.
+            response = once || ticket != null ? provider.chatOnce(messages, temperature, limit)
+                    : provider.chat(messages, temperature, limit);
+        } catch (RuntimeException e) {
+            if (ticket != null) ticket.finish(providerId, null, true);
+            throw e;
+        }
+        if (ticket != null) ticket.finish(providerId, response, false);
+        return response;
+    }
+
+    public synchronized String analysisFingerprint() {
+        String providerId = getProviderForAgent("archivist");
+        try {
+            return AnalysisStorage.hash(objectMapper.writer()
+                    .with(com.fasterxml.jackson.databind.SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS).writeValueAsString(Map.of(
+                    "provider", providerId, "profiles", loadedProfiles,
+                    "model", openaiModel == null ? "" : openaiModel,
+                    "base", openaiBaseUrl == null ? "" : openaiBaseUrl,
+                    "temperature", openaiTemperature, "max_tokens", openaiMaxTokens)));
+        } catch (IOException e) { throw new java.io.UncheckedIOException(e); }
     }
     
     /**
@@ -265,7 +299,9 @@ public class LlmGateway {
         List<String> currentIds = profiles.stream()
                 .map(profile -> stringValue(profile.get("id"))).toList();
         loadedProfiles.keySet().removeIf(id -> {
-            if (currentIds.contains(id)) return false;
+            int sep = id.indexOf("::");
+            String baseId = sep > 0 ? id.substring(0, sep) : id;
+            if (currentIds.contains(baseId)) return false;
             providers.remove(id);
             return true;
         });
@@ -274,56 +310,95 @@ public class LlmGateway {
         }
     }
 
+    /**
+     * 分工解析出的 provider key：profileId，或带模型覆盖的 profileId::model。
+     * 同一档案（中转）可以被不同分工挂上不同模型。
+     */
     private Optional<String> resolveAssignedProfileId(String agentName) {
         if (agentName == null || agentName.isBlank()) {
             return Optional.empty();
         }
         Object raw = readAssignments().get(agentName);
-        String profileId = raw == null ? "" : raw.toString().trim();
+        String profileId;
+        String model = "";
+        if (raw instanceof Map<?, ?> entry) {
+            profileId = stringValue(entry.get("profile_id"));
+            model = stringValue(entry.get("model"));
+        } else {
+            profileId = stringValue(raw);
+        }
         if (profileId.isBlank()) {
             return Optional.empty();
         }
+        String providerKey = model.isBlank() ? profileId : profileId + "::" + model;
         synchronized (this) {
-            ensureProfileLoaded(profileId);
+            ensureProfileLoaded(providerKey);
         }
-        return providers.containsKey(profileId) ? Optional.of(profileId) : Optional.empty();
+        return providers.containsKey(providerKey) ? Optional.of(providerKey) : Optional.empty();
     }
 
-    private void ensureProfileLoaded(String profileId) {
-        if (profileId == null || profileId.isBlank()) {
+    private void ensureProfileLoaded(String providerKey) {
+        if (providerKey == null || providerKey.isBlank()) {
             return;
+        }
+        String profileId = providerKey;
+        String modelOverride = null;
+        int sep = providerKey.indexOf("::");
+        if (sep > 0) {
+            profileId = providerKey.substring(0, sep);
+            modelOverride = providerKey.substring(sep + 2);
         }
         for (Map<String, Object> profile : readProfiles()) {
             if (profileId.equals(String.valueOf(profile.getOrDefault("id", "")))) {
-                ensureProfileLoaded(profile);
+                Map<String, Object> effective = profile;
+                if (modelOverride != null && !modelOverride.isBlank()) {
+                    effective = new LinkedHashMap<>(profile);
+                    effective.put("model", modelOverride);
+                }
+                ensureProfileLoaded(providerKey, effective);
                 return;
             }
         }
-        if (loadedProfiles.remove(profileId) != null) {
-            providers.remove(profileId);
+        if (loadedProfiles.remove(providerKey) != null) {
+            providers.remove(providerKey);
         }
     }
 
     private void ensureProfileLoaded(Map<String, Object> profile) {
-        String profileId = String.valueOf(profile.getOrDefault("id", "")).trim();
-        if (profileId.isBlank()) {
+        ensureProfileLoaded(String.valueOf(profile.getOrDefault("id", "")).trim(), profile);
+    }
+
+    private void ensureProfileLoaded(String providerKey, Map<String, Object> profile) {
+        if (providerKey.isBlank()) {
             return;
         }
         // Preserve the HTTP client's connection pool until this profile actually changes.
-        if (profile.equals(loadedProfiles.get(profileId)) && providers.containsKey(profileId)) {
+        if (profile.equals(loadedProfiles.get(providerKey)) && providers.containsKey(providerKey)) {
             return;
         }
         LlmProvider provider = createProvider(profile);
         if (provider == null) {
-            loadedProfiles.remove(profileId);
-            if (providers.remove(profileId) != null) {
-                log.info("Removed unavailable LLM profile: {} ({})", profileId, profile.get("provider"));
+            loadedProfiles.remove(providerKey);
+            if (providers.remove(providerKey) != null) {
+                log.info("Removed unavailable LLM profile: {} ({})", providerKey, profile.get("provider"));
             }
             return;
         }
-        providers.put(profileId, provider);
-        loadedProfiles.put(profileId, new LinkedHashMap<>(profile));
-        log.info("Loaded LLM profile: {} ({})", profileId, profile.get("provider"));
+        providers.put(providerKey, provider);
+        loadedProfiles.put(providerKey, new LinkedHashMap<>(profile));
+        log.info("Loaded LLM profile: {} ({})", providerKey, profile.get("provider"));
+        // 基础档案重建后，派生的按模型覆盖的 provider 全部作废，下次用到时按新档案懒加载
+        String baseId = String.valueOf(profile.getOrDefault("id", "")).trim();
+        if (providerKey.equals(baseId)) {
+            String prefix = baseId + "::";
+            loadedProfiles.keySet().removeIf(key -> {
+                if (!key.startsWith(prefix)) {
+                    return false;
+                }
+                providers.remove(key);
+                return true;
+            });
+        }
     }
 
     private LlmProvider createProvider(Map<String, Object> profile) {

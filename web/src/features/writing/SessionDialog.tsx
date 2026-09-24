@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { CheckCheck, MessageSquareReply, Radio, RefreshCw, Sparkles } from 'lucide-react';
@@ -14,6 +14,8 @@ function reason(error: unknown, fallback: string): string {
 }
 
 import { ArchiveDetails } from './ArchiveStatus';
+import { ContinuityCheck } from './ContinuityCheck';
+import { DraftContinuityReview } from './DraftContinuityReview';
 
 type Stage = 'form' | 'questions' | 'draft' | 'confirmed';
 
@@ -42,6 +44,20 @@ export function SessionDialog({
   onClose: () => void;
 }): ReactNode {
   const client = useQueryClient();
+  const [checking, setChecking] = useState(false);
+  const [reviewAction, setReviewAction] = useState<'adopt' | 'confirm' | null>(null);
+  const reviewRevision = useRef<string | undefined>(undefined);
+  const pendingGeneration = useRef<(() => void) | null>(null);
+  const checkBefore = (action: () => void): void => {
+    pendingGeneration.current = action;
+    setChecking(true);
+  };
+  const continueGeneration = useCallback(() => {
+    const action = pendingGeneration.current;
+    pendingGeneration.current = null;
+    setChecking(false);
+    action?.();
+  }, []);
 
   const [stage, setStage] = useState<Stage>('form');
   const [goal, setGoal] = useState('');
@@ -54,6 +70,7 @@ export function SessionDialog({
   const [flow, setFlow] = useState<SessionFlowResponse | null>(null);
   const [streamed, setStreamed] = useState<string | null>(null);
   const [streaming, setStreaming] = useState(false);
+  const [streamFailed, setStreamFailed] = useState(false);
   const [progress, setProgress] = useState('');
   const streamAbort = useRef<AbortController | null>(null);
 
@@ -72,6 +89,9 @@ export function SessionDialog({
 
   /** 统一处理 start/answer/feedback 的响应落点。 */
   const settle = (data: SessionFlowResponse): void => {
+    setReviewAction(null);
+    setStreamed(null);
+    setStreamFailed(false);
     setFlow(data);
     if (data.success === false) {
       toast.error(data.error ?? data.message ?? '会话失败');
@@ -140,6 +160,7 @@ export function SessionDialog({
         feedback: action === 'confirm' ? '' : feedbackText.trim(),
         action,
         rejected_entities: rejected,
+        ...(action === 'confirm' ? { continuity_revision: reviewRevision.current } : {}),
       }),
     onSuccess: (data, action) => {
       if (data.success === false) { settle(data); return; }
@@ -156,22 +177,35 @@ export function SessionDialog({
   });
 
   const streamRewrite = (): void => {
+    setReviewAction(null);
     streamAbort.current?.abort();
     const controller = new AbortController();
     streamAbort.current = controller;
     setStreamed('');
     setStreaming(true);
+    setStreamFailed(false);
+    let received = '';
     void sessionApi
       .streamDraft(
         projectId,
         chapter,
-        (chunk) => setStreamed((current) => (current ?? '') + chunk),
+        (chunk) => {
+          if (controller.signal.aborted) return;
+          received += chunk;
+          setStreamed(received);
+        },
         controller.signal,
       )
-      .then(() => setStreaming(false))
-      .catch((error: unknown) => {
+      .then(() => {
+        if (controller.signal.aborted) return;
         setStreaming(false);
-        if (!controller.signal.aborted) toast.error(reason(error, '流式生成失败'));
+        setStreamFailed(received.trim() === '' || received.trimStart().startsWith('[Error:'));
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        setStreaming(false);
+        setStreamFailed(true);
+        toast.error(reason(error, '流式生成失败'));
       });
   };
 
@@ -179,11 +213,15 @@ export function SessionDialog({
   const preview = streamed ?? versionedDraft?.content ?? '';
   const busy = start.isPending || answer.isPending || feedback.isPending;
 
-  const adopt = (): void => {
-    if (preview === '') return;
-    onAdopt(preview);
-    onClose();
-  };
+  const completeReview = useCallback((revision: string): void => {
+    reviewRevision.current = revision;
+    setReviewAction(null);
+    if (reviewAction === 'confirm') feedback.mutate('confirm');
+    else if (reviewAction === 'adopt' && preview !== '') {
+      onAdopt(preview);
+      onClose();
+    }
+  }, [reviewAction, feedback, preview, onAdopt, onClose]);
 
   const close = (): void => {
     streamAbort.current?.abort();
@@ -201,12 +239,12 @@ export function SessionDialog({
       size="lg"
       dismissible={!busy && !streaming}
       footer={
-        stage === 'form' ? (
+        checking || reviewAction !== null ? null : stage === 'form' ? (
           <>
             <Button tone="outline" onClick={close}>
               取消
             </Button>
-            <Button tone="primary" icon={<Sparkles />} loading={busy} onClick={() => start.mutate()}>
+            <Button tone="primary" icon={<Sparkles />} loading={busy} onClick={() => checkBefore(() => start.mutate())}>
               开始写章
             </Button>
           </>
@@ -215,7 +253,7 @@ export function SessionDialog({
             <Button tone="outline" onClick={close}>
               取消
             </Button>
-            <Button tone="primary" loading={busy} onClick={() => answer.mutate()}>
+            <Button tone="primary" loading={busy} onClick={() => checkBefore(() => answer.mutate())}>
               提交并开始写作
             </Button>
           </>
@@ -229,23 +267,30 @@ export function SessionDialog({
               icon={<RefreshCw />}
               loading={streaming}
               disabled={busy}
-              onClick={streamRewrite}
+              title="重新生成一版全文预览，不落盘"
+              onClick={() => checkBefore(streamRewrite)}
             >
-              流式重写
+              重写
             </Button>
             {versionedDraft !== null && streamed === null && (
               <Button
-                tone="outline"
+                tone="danger"
                 icon={<CheckCheck />}
                 loading={busy}
                 disabled={streaming}
-                onClick={() => feedback.mutate('confirm')}
+                title="确认这一版为本章定稿，并跑事实提取/摘要/记忆包归档"
+                onClick={() => setReviewAction('confirm')}
               >
-                定稿
+                定稿归档
               </Button>
             )}
-            <Button tone="primary" onClick={adopt} disabled={preview === '' || streaming}>
-              采用到编辑器
+            <Button
+              tone="success"
+              onClick={() => setReviewAction('adopt')}
+              disabled={preview === '' || streaming || busy || streamFailed}
+              title="把预览文本放进编辑器并保存为当前草稿，不做定稿归档"
+            >
+              存为本章草稿
             </Button>
           </>
         ) : (
@@ -255,6 +300,13 @@ export function SessionDialog({
         )
       }
     >
+      {checking && <ContinuityCheck projectId={projectId} chapter={chapter}
+        onReady={continueGeneration} onCancel={() => { pendingGeneration.current = null; setChecking(false); }} />}
+      {reviewAction !== null && <DraftContinuityReview
+        projectId={projectId} chapter={chapter} content={preview}
+        onReady={completeReview} onCancel={() => setReviewAction(null)}
+      />}
+      {streamFailed && <p role="alert" className="text-sm text-cinnabar-300">流式生成未完成，请重新生成后再采纳。</p>}
       {/* 进度行：生成期显示 WS 广播的最新阶段 */}
       {(busy || streaming) && (
         <p className="mb-3 flex items-center gap-2 text-2xs text-gamboge-300">
@@ -263,7 +315,7 @@ export function SessionDialog({
         </p>
       )}
 
-      {stage === 'form' && (
+      {!checking && stage === 'form' && (
         <div className="flex flex-col gap-3">
           {currentContent.trim() !== '' && (
             <p className="rounded-md border border-gamboge-500/30 bg-gamboge-500/10 px-3 py-2 text-2xs text-gamboge-300">
@@ -299,7 +351,7 @@ export function SessionDialog({
         </div>
       )}
 
-      {stage === 'questions' && flow !== null && (
+      {!checking && stage === 'questions' && flow !== null && (
         <div className="flex flex-col gap-3">
           <BriefSummary brief={flow.scene_brief ?? null} />
           <div className="border-t border-ink-800 pt-3">
@@ -325,7 +377,7 @@ export function SessionDialog({
         </div>
       )}
 
-      {stage === 'draft' && (
+      {!checking && stage === 'draft' && (
         <div className="flex flex-col gap-3">
           <div className="flex items-center gap-2 text-2xs text-ink-500">
             {versionedDraft !== null && streamed === null && (
@@ -391,8 +443,8 @@ export function SessionDialog({
               size="sm"
               icon={<MessageSquareReply />}
               loading={busy}
-              disabled={feedbackText.trim() === ''}
-              onClick={() => feedback.mutate('revise')}
+              disabled={feedbackText.trim() === '' || streaming || reviewAction !== null}
+              onClick={() => checkBefore(() => feedback.mutate('revise'))}
             >
               按反馈改
             </Button>

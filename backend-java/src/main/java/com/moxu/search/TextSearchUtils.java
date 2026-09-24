@@ -56,6 +56,80 @@ public final class TextSearchUtils {
     private TextSearchUtils() {
     }
 
+    /** Request-local statistics: no cross-project or stale-text cache. */
+    public static final class Scorer {
+        private final ProjectLexicon lexicon;
+        private final String query;
+        private final Map<String, Double> weights;
+        private final double totalWeight;
+        private final Map<String, DocumentTerms> documents = new LinkedHashMap<>();
+
+        private Scorer(String query, ProjectLexicon lexicon) {
+            this.lexicon = lexicon == null ? ProjectLexicon.empty() : lexicon;
+            this.query = query == null ? "" : query.toLowerCase(Locale.ROOT).trim();
+            this.weights = queryTokenWeights(query, this.lexicon);
+            this.totalWeight = weights.values().stream().mapToDouble(Double::doubleValue).sum();
+        }
+
+        private DocumentTerms document(String text) {
+            String source = text == null ? "" : text;
+            return documents.computeIfAbsent(source, value -> {
+                Map<String, Integer> counts = tokenizeCounts(value, lexicon);
+                return new DocumentTerms(value.toLowerCase(Locale.ROOT), counts,
+                        counts.values().stream().mapToInt(Integer::intValue).sum());
+            });
+        }
+
+        public Map<String, Double> buildIdfTable(Collection<String> texts) {
+            if (texts == null) return Map.of();
+            Map<String, Integer> df = new LinkedHashMap<>();
+            int total = 0;
+            for (String text : texts) {
+                if (text == null || text.isBlank()) continue;
+                total++;
+                document(text).counts.keySet().forEach(term -> df.merge(term, 1, Integer::sum));
+            }
+            Map<String, Double> idf = new LinkedHashMap<>();
+            for (var entry : df.entrySet())
+                idf.put(entry.getKey(), Math.max(0.0, Math.log((total - entry.getValue() + 0.5)
+                        / (entry.getValue() + 0.5) + 1.0)));
+            return idf;
+        }
+
+        public double score(String text, Map<String, Double> idf) {
+            DocumentTerms doc = document(text);
+            double overlap = overlap(doc);
+            if (overlap <= 0) return 0;
+            double bm25 = 0;
+            for (var entry : weights.entrySet()) {
+                int tf = doc.counts.getOrDefault(entry.getKey(), 0);
+                if (tf == 0) continue;
+                double termIdf = idf == null ? 1.0 : idf.getOrDefault(entry.getKey(), 1.0);
+                bm25 += entry.getValue() * termIdf * (tf * 2.2)
+                        / (tf + 1.2 * (0.25 + 0.75 * (doc.length / 120.0)));
+            }
+            return overlap * 0.35 + bm25 * 0.65;
+        }
+
+        private double overlap(DocumentTerms doc) {
+            if (totalWeight <= 0 || doc.counts.isEmpty()) return 0;
+            double matched = 0;
+            for (var entry : weights.entrySet())
+                if (doc.counts.containsKey(entry.getKey())) matched += entry.getValue();
+            if (matched <= 0) return 0;
+            double score = matched / totalWeight;
+            return !query.isBlank() && doc.lower.contains(query) ? Math.min(1.0, score + 0.25) : score;
+        }
+
+        public int preparedDocumentCount() { return documents.size(); }
+    }
+
+    private record DocumentTerms(String lower, Map<String, Integer> counts, int length) {}
+
+    public static Scorer scorer(String query, ProjectLexicon lexicon) {
+        return new Scorer(query, lexicon);
+    }
+
     /**
      * 提取 token 列表（保留重复，适合 docLen / TF 统计）。
      */
@@ -333,12 +407,7 @@ public final class TextSearchUtils {
     public static double calculateHybridScore(String query, String content,
                                               Map<String, Double> idfTable,
                                               ProjectLexicon projectLexicon) {
-        double overlap = calculateOverlapScore(query, content, projectLexicon);
-        if (overlap <= 0) {
-            return 0.0;
-        }
-        double bm25 = calculateBm25Score(query, content, idfTable, projectLexicon);
-        return overlap * 0.35 + bm25 * 0.65;
+        return scorer(query, projectLexicon).score(content, idfTable);
     }
 
     /**

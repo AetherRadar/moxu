@@ -14,6 +14,8 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -111,6 +113,66 @@ class ContextSelectEngineIdfTest {
                 .filter(item -> item.getId().equals("F3") || item.getId().equals("F4"))
                 .count();
         assertTrue(ditchFacts <= 1, "近重复的流水账事实应在检索时折叠");
+    }
+
+    @Test
+    void factsAfterTheFirstFiftyRemainSearchable() {
+        TestCanonStorage canon = new TestCanonStorage();
+        List<Fact> facts = new ArrayList<>();
+        for (int i = 0; i < 200; i++) facts.add(Fact.builder().id("background-" + i)
+                .statement("Background ordinary landscape number " + i).build());
+        facts.add(Fact.builder().id("important").statement("Alice must keep the obsidian key.").build());
+        canon.facts = facts;
+        var engine = new ContextSelectEngine(new TestCardStorage(), canon, new DraftStorage(), null);
+        var selected = engine.retrievalSelect("p", "obsidian key", List.of("fact"), 1);
+        assertEquals(List.of("important"), selected.stream().map(ContextItem::getId).toList());
+    }
+
+    @Test
+    void characterAndWorldCardsAreLimitedAfterRankingNotByStorageOrder() {
+        TestCardStorage cards = new TestCardStorage();
+        Map<String, CharacterCard> characters = new LinkedHashMap<>();
+        Map<String, WorldCard> worlds = new LinkedHashMap<>();
+        for (int i = 0; i < 65; i++) {
+            characters.put("person" + i, CharacterCard.builder().name("person" + i).description("background").build());
+            worlds.put("place" + i, WorldCard.builder().name("place" + i).description("background").build());
+        }
+        characters.put("Alice", CharacterCard.builder().name("Alice").description("obsidian keeper").build());
+        worlds.put("Citadel", WorldCard.builder().name("Citadel").description("obsidian vault").build());
+        cards.characterNames = new ArrayList<>(characters.keySet()); cards.characterCards = characters;
+        cards.worldNames = new ArrayList<>(worlds.keySet()); cards.worldCards = worlds;
+        var engine = new ContextSelectEngine(cards, new TestCanonStorage(), new DraftStorage(), null);
+        assertEquals("character:Alice", engine.retrievalSelect("p", "obsidian", List.of("character"), 1).getFirst().getId());
+        assertEquals("world_entity:Citadel", engine.retrievalSelect("p", "obsidian", List.of("world"), 1).getFirst().getId());
+    }
+
+    @Test
+    void factDeduplicationPreservesNegationNumbersAndAdditionalClauses() {
+        TestCanonStorage canon = new TestCanonStorage();
+        canon.facts = List.of(
+                Fact.builder().id("positive").statement("Alice owns the key").build(),
+                Fact.builder().id("negative").statement("Alice does not own the key").build(),
+                Fact.builder().id("qualified").statement("Alice owns the key but cannot use it").build(),
+                Fact.builder().id("one").statement("Alice owns 1 key").build(),
+                Fact.builder().id("two").statement("Alice owns 2 keys").build(),
+                Fact.builder().id("duplicate").statement("  Alice owns the key  ").build());
+        var engine = new ContextSelectEngine(new TestCardStorage(), canon, new DraftStorage(), null);
+        var ids = engine.retrievalSelect("p", "Alice key", List.of("fact"), 10).stream().map(ContextItem::getId).toList();
+        assertEquals(5, ids.size());
+        assertTrue(ids.containsAll(List.of("positive", "negative", "qualified", "one", "two")));
+        assertFalse(ids.contains("duplicate"));
+    }
+
+    @Test
+    void noPreviousWrittenChapterCannotRetrieveFutureProseOrSummaries() throws Exception {
+        DraftStorage drafts = new DraftStorage();
+        ReflectionTestUtils.setField(drafts, "dataDir", tempDir.toString());
+        drafts.saveFinalDraft("p", "V1C2", "Alice holds the obsidian key.");
+        drafts.saveChapterSummary("p", com.moxu.model.entity.ChapterSummary.builder()
+                .chapter("V1C2").briefSummary("Alice holds the obsidian key.").build());
+        var engine = new ContextSelectEngine(new TestCardStorage(), new TestCanonStorage(), drafts, null);
+        assertTrue(engine.retrievalSelectForChapter("p", "V1C1", "obsidian", List.of("summary", "text_chunk"), 5).isEmpty());
+        assertFalse(engine.retrievalSelectForChapter("p", "V1C3", "obsidian", List.of("summary", "text_chunk"), 5).isEmpty());
     }
 
     private ProjectLexiconResolver resolver(CardStorage cardStorage) {

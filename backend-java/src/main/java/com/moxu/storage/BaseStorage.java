@@ -36,7 +36,7 @@ public abstract class BaseStorage {
     protected final ObjectMapper yamlMapper;
     protected final ObjectMapper jsonMapper;
     
-    @Value("${moxu.data-dir:../data}")
+    @Value("${moxu.data-dir:data}")
     protected String dataDir;
     
     /**
@@ -106,24 +106,12 @@ public abstract class BaseStorage {
     }
     
     public Path getDataPath() {
-        Path p = Path.of(dataDir).toAbsolutePath().normalize();
-        if (Files.exists(p)) {
-            return p;
-        }
-        // 备用：尝试 ../data（从 backend-java/ 目录启动时）
-        Path alt1 = Path.of("../data").toAbsolutePath().normalize();
-        if (Files.exists(alt1)) {
-            log.debug("dataDir {} 不存在，使用备用路径 {}", p, alt1);
-            return alt1;
-        }
-        // 备用：尝试 ./data（从项目根目录启动时）
-        Path alt2 = Path.of("data").toAbsolutePath().normalize();
-        if (Files.exists(alt2)) {
-            log.debug("dataDir {} 不存在，使用备用路径 {}", p, alt2);
-            return alt2;
-        }
-        log.warn("数据目录不存在: {} (工作目录: {})", p, Path.of("").toAbsolutePath());
-        return p;
+        if (dataDir == null || dataDir.isBlank()) throw new IllegalStateException("Data directory is not configured");
+        Path path = Path.of(dataDir).toAbsolutePath().normalize();
+        if (Files.exists(path) && !Files.isDirectory(path))
+            throw new IllegalStateException("Data directory is not a directory: " + path);
+        // A missing configured directory belongs to this instance, never to a nearby installation.
+        return path;
     }
     
     public Path getProjectPath(String projectId) {

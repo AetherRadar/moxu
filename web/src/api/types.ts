@@ -247,6 +247,7 @@ export interface FeedbackRequest {
   feedback?: string;
   action?: 'revise' | 'confirm';
   rejected_entities?: string[];
+  continuity_revision?: string;
 }
 
 export interface EditSuggestRequest {
@@ -543,11 +544,19 @@ export interface LlmProfile extends JsonRecord {
   name?: string;
   provider?: string;
   model?: string;
+  /** 上次从该中转拉到的模型列表，分工页用它做按角色选模型的候选 */
+  models?: string[];
   base_url?: string;
   api_key?: string;
 }
 
-export type LlmAssignments = Record<string, unknown>;
+/** 分工值：model 为空表示沿用档案自带模型；同一档案可在不同分工挂不同模型。 */
+export interface LlmAssignment extends JsonRecord {
+  profile_id?: string;
+  model?: string;
+}
+
+export type LlmAssignments = Record<string, LlmAssignment>;
 
 export interface LlmProviderMeta extends JsonRecord {
   id?: string;

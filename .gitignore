@@ -56,6 +56,7 @@ backend/static/
 backend-java/target/
 .moxu-runtime/
 /work/
+data/**/analysis/
 
 # Internal reports / plans / logs (not for repo)
 003.md

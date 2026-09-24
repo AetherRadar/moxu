@@ -1,7 +1,11 @@
 import {
   forwardRef,
+  useCallback,
+  useEffect,
   useId,
+  useRef,
   type InputHTMLAttributes,
+  type MutableRefObject,
   type ReactNode,
   type TextareaHTMLAttributes,
 } from 'react';
@@ -44,12 +48,38 @@ export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElemen
 }
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function Textarea(
-  { className, autoGrow = false, maxRows = 14, rows = 3, onInput, ...rest },
+  { className, autoGrow = false, maxRows = 14, rows = 3, onInput, value, ...rest },
   ref,
 ) {
+  const elRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const adjustHeight = useCallback(
+    (el: HTMLTextAreaElement): void => {
+      // 先归零再读 scrollHeight，否则缩短内容时高度不会回落
+      el.style.height = 'auto';
+      const lineHeight = Number.parseFloat(getComputedStyle(el).lineHeight) || 18;
+      const maxHeight = lineHeight * maxRows;
+      const capped = el.scrollHeight > maxHeight;
+      el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`;
+      // 顶到上限就别再 hidden 了，否则超出的内容看不见也拉不动
+      el.style.overflowY = capped ? 'auto' : 'hidden';
+    },
+    [maxRows],
+  );
+
+  // 初始渲染和外部值变化（重载/采纳候选）同样要算高度，
+  // 只靠 onInput 的话长文本打开时会被裁在 rows 行高里
+  useEffect(() => {
+    if (autoGrow && elRef.current !== null) adjustHeight(elRef.current);
+  }, [value, autoGrow, adjustHeight]);
+
   return (
     <textarea
-      ref={ref}
+      ref={(el) => {
+        elRef.current = el;
+        if (typeof ref === 'function') ref(el);
+        else if (ref !== null) (ref as MutableRefObject<HTMLTextAreaElement | null>).current = el;
+      }}
       rows={rows}
       className={cn(
         fieldBase,
@@ -58,15 +88,10 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
         className,
       )}
       onInput={(event) => {
-        if (autoGrow) {
-          const el = event.currentTarget;
-          // 先归零再读 scrollHeight，否则缩短内容时高度不会回落
-          el.style.height = 'auto';
-          const lineHeight = Number.parseFloat(getComputedStyle(el).lineHeight) || 18;
-          el.style.height = `${Math.min(el.scrollHeight, lineHeight * maxRows)}px`;
-        }
+        if (autoGrow) adjustHeight(event.currentTarget);
         onInput?.(event);
       }}
+      value={value}
       {...rest}
     />
   );

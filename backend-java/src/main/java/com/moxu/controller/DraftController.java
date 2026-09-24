@@ -66,6 +66,12 @@ public class DraftController {
     private final ProjectStorage projectStorage;
     private final LlmGateway llmGateway;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private com.moxu.analysis.DraftSemanticReviewService semanticReview;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setSemanticReview(com.moxu.analysis.DraftSemanticReviewService semanticReview) {
+        this.semanticReview = semanticReview;
+    }
     
     @GetMapping("")
     public List<String> listChapters(@PathVariable String projectId) {
@@ -104,6 +110,35 @@ public class DraftController {
             log.error("保存草稿失败", e);
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
         }
+    }
+
+    public record ContinuityCheckRequest(
+            @jakarta.validation.constraints.NotNull
+            @jakarta.validation.constraints.Size(max = 1000000) String content) {}
+
+    @PostMapping("/{chapter}/continuity-check")
+    public com.moxu.quality.ContinuityProtection.Report checkContinuity(
+            @PathVariable String projectId, @PathVariable String chapter,
+            @jakarta.validation.Valid @RequestBody ContinuityCheckRequest request) throws IOException {
+        if (!CHAPTER_ID_PATTERN.matcher(chapter).matches())
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid chapter");
+        return semanticReview == null
+                ? com.moxu.quality.ContinuityProtection.review(draftStorage, projectId, chapter, request.content())
+                : semanticReview.review(projectId, chapter, request.content());
+    }
+
+    public record SemanticCheckRequest(
+            @jakarta.validation.constraints.NotBlank @jakarta.validation.constraints.Size(max = 16000) String content,
+            @jakarta.validation.constraints.NotBlank String revision,
+            @jakarta.validation.constraints.Min(1000) @jakarta.validation.constraints.Max(200000) long max_tokens) {}
+
+    @PostMapping("/{chapter}/semantic-check")
+    public com.moxu.quality.ContinuityProtection.Report checkSemantics(
+            @PathVariable String projectId, @PathVariable String chapter,
+            @jakarta.validation.Valid @RequestBody SemanticCheckRequest request) throws IOException {
+        if (!CHAPTER_ID_PATTERN.matcher(chapter).matches())
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid chapter");
+        return semanticReview.run(projectId, chapter, request.content(), request.revision(), request.max_tokens());
     }
     
     @DeleteMapping("/{chapter}")

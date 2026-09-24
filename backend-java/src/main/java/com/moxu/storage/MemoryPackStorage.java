@@ -25,6 +25,28 @@ public class MemoryPackStorage extends BaseStorage {
 
     private static final int MAX_MEMORY_PACK_HISTORY = 3;
 
+    /** Later chapters may use facts or summaries indirectly; invalidate conservatively, rebuild lazily. */
+    public synchronized void invalidateFrom(String projectId, String changedChapter) throws IOException {
+        String changed = com.moxu.analysis.AnalysisStorage.chapter(changedChapter);
+        Path directory = getProjectPath(projectId).resolve("memory_packs");
+        if (!Files.exists(directory)) return;
+        String[] boundary = changed.substring(1).split("C");
+        try (var files = Files.list(directory)) {
+            for (Path file : files.filter(Files::isRegularFile).toList()) {
+                String chapter = file.getFileName().toString().replaceFirst("\\.(json|yaml)$", "");
+                if (!chapter.matches("V\\d+C\\d+")) continue;
+                String[] parts = chapter.substring(1).split("C");
+                int volume = Integer.compare(Integer.parseInt(parts[0]), Integer.parseInt(boundary[0]));
+                if (volume < 0 || volume == 0 && Integer.parseInt(parts[1]) < Integer.parseInt(boundary[1])) continue;
+                Map<String, Object> pack = readPack(projectId, chapter);
+                if (pack == null || Boolean.TRUE.equals(pack.get("context_stale"))) continue;
+                pack.put("context_stale", true);
+                pack.put("invalidated_by", changed);
+                writePack(projectId, chapter, pack);
+            }
+        }
+    }
+
     /**
      * 读取 memory pack
      */

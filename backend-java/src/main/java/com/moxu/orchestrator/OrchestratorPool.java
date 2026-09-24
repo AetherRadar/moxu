@@ -41,6 +41,12 @@ public class OrchestratorPool {
     private final TraceWebSocketHandler traceWebSocketHandler;
     private final BindingsController bindingsController;
     private final ChapterAnalysisExecutor analysisExecutor;
+    private com.moxu.analysis.DraftSemanticReviewService semanticReview;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setSemanticReview(com.moxu.analysis.DraftSemanticReviewService semanticReview) {
+        this.semanticReview = semanticReview;
+    }
     
     // LRU 缓存
     private final LinkedHashMap<String, OrchestratorEntry> pool = new LinkedHashMap<>(16, 0.75f, true) {
@@ -89,6 +95,7 @@ public class OrchestratorPool {
                 writerAgent, archivistAgent, editorAgent, selectEngine, webSocketHandler, traceWebSocketHandler,
                 bindingsController, analysisExecutor
         );
+        orchestrator.setSemanticReview(semanticReview);
         
         pool.put(projectId, new OrchestratorEntry(orchestrator));
         log.info("Created new orchestrator for project: {}", projectId);

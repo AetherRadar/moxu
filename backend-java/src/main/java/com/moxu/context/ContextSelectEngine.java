@@ -43,11 +43,6 @@ public class ContextSelectEngine {
             "看见", "听见", "谈论", "路过", "喊", "喝令", "站住", "回去集结",
             "完成任务", "清通", "回堵", "下午完成", "来回确认", "中午休息"
     );
-    private static final Set<String> FACT_DEDUP_STOPWORDS = Set.of(
-            "今天", "昨日", "昨天", "今早", "清晨", "中午", "下午", "傍晚", "深夜", "夜里",
-            "已经", "仍然", "继续", "随后", "然后", "再次", "其中", "一名", "一位", "一个", "两名", "几名",
-            "弟子", "有人", "外门", "宗门"
-    );
     private static final Pattern FACT_UNNAMED_ACTOR_RE = Pattern.compile(
             "^(?:一名|一位|一个|两名|几名|有人|数名|一伙).*(?:弟子|男子|女子|人|壮实弟子|路过弟子).*$"
     );
@@ -175,6 +170,7 @@ public class ContextSelectEngine {
         Set<String> normalizedTypes = normalizeItemTypes(itemTypes);
         List<ContextItem> candidates = new ArrayList<>();
         ProjectLexicon projectLexicon = resolveProjectLexicon(projectId);
+        TextSearchUtils.Scorer scorer = TextSearchUtils.scorer(query, projectLexicon);
         Map<String, Double> characterIdfTable = Map.of();
         Map<String, Double> worldIdfTable = Map.of();
         Map<String, Double> factIdfTable = Map.of();
@@ -184,60 +180,58 @@ public class ContextSelectEngine {
 
         if (normalizedTypes.contains("character")) {
             characterCards = loadCharacterCards(projectId);
-            characterIdfTable = TextSearchUtils.buildIdfTable(
+            characterIdfTable = scorer.buildIdfTable(
                     characterCards.stream()
                             .map(this::formatCharacterEvidence)
                             .filter(Objects::nonNull)
                             .filter(s -> !s.isBlank())
-                            .toList(),
-                    projectLexicon
+                            .toList()
             );
         }
 
         if (normalizedTypes.contains("world_entity") || normalizedTypes.contains("world_rule")) {
             worldCards = loadWorldCards(projectId);
-            worldIdfTable = TextSearchUtils.buildIdfTable(
+            worldIdfTable = scorer.buildIdfTable(
                     worldCards.stream()
                             .flatMap(card -> collectWorldSearchDocs(card).stream())
                             .filter(Objects::nonNull)
                             .filter(s -> !s.isBlank())
-                            .toList(),
-                    projectLexicon
+                            .toList()
             );
         }
 
         if (normalizedTypes.contains("fact")) {
             facts = loadFacts(projectId);
-            factIdfTable = TextSearchUtils.buildIdfTable(
+            factIdfTable = scorer.buildIdfTable(
                     facts.stream()
+                            .filter(Objects::nonNull)
                             .map(Fact::getStatement)
                             .filter(Objects::nonNull)
                             .filter(s -> !s.isBlank())
-                            .toList(),
-                    projectLexicon
+                            .toList()
             );
         }
 
         if (normalizedTypes.contains("style")) {
-            loadStyleCandidates(projectId, query, projectLexicon, candidates);
+            loadStyleCandidates(projectId, scorer, candidates);
         }
         if (normalizedTypes.contains("character")) {
-            loadCharacterCandidates(query, characterCards, characterIdfTable, projectLexicon, candidates);
+            loadCharacterCandidates(scorer, characterCards, characterIdfTable, candidates);
         }
         if (normalizedTypes.contains("world_entity")) {
-            loadWorldEntityCandidates(query, worldCards, worldIdfTable, projectLexicon, candidates);
+            loadWorldEntityCandidates(scorer, worldCards, worldIdfTable, candidates);
         }
         if (normalizedTypes.contains("world_rule")) {
-            loadWorldRuleCandidates(query, worldCards, worldIdfTable, projectLexicon, candidates);
+            loadWorldRuleCandidates(scorer, worldCards, worldIdfTable, candidates);
         }
         if (normalizedTypes.contains("fact")) {
-            loadFactCandidates(query, facts, factIdfTable, projectLexicon, candidates);
+            loadFactCandidates(scorer, facts, factIdfTable, projectLexicon, candidates, topK);
         }
         if (normalizedTypes.contains("summary")) {
-            loadSummaryCandidates(projectId, query, textChunkChapters, textChunkExcludeChapters, projectLexicon, candidates);
+            loadSummaryCandidates(projectId, scorer, textChunkChapters, textChunkExcludeChapters, candidates);
         }
         if (normalizedTypes.contains("text_chunk")) {
-            loadTextChunkCandidates(projectId, query, topK, textChunkChapters, textChunkExcludeChapters, projectLexicon, candidates);
+            loadTextChunkCandidates(projectId, query, topK, textChunkChapters, textChunkExcludeChapters, scorer, candidates);
         }
 
         return candidates.stream()
@@ -270,7 +264,7 @@ public class ContextSelectEngine {
         try {
             List<CharacterCard> cards = new ArrayList<>();
             List<String> names = cardStorage.listCharacterCards(projectId);
-            for (String name : names.subList(0, Math.min(names.size(), MAX_CANDIDATES_PER_TYPE))) {
+            for (String name : names) {
                 cardStorage.getCharacterCard(projectId, name).ifPresent(cards::add);
             }
             return cards;
@@ -284,7 +278,7 @@ public class ContextSelectEngine {
         try {
             List<WorldCard> cards = new ArrayList<>();
             List<String> names = cardStorage.listWorldCards(projectId);
-            for (String name : names.subList(0, Math.min(names.size(), MAX_CANDIDATES_PER_TYPE))) {
+            for (String name : names) {
                 cardStorage.getWorldCard(projectId, name).ifPresent(cards::add);
             }
             return cards;
@@ -297,7 +291,7 @@ public class ContextSelectEngine {
     private List<Fact> loadFacts(String projectId) {
         try {
             List<Fact> facts = canonStorage.listFacts(projectId);
-            return facts.subList(0, Math.min(facts.size(), MAX_CANDIDATES_PER_TYPE));
+            return facts;
         } catch (Exception e) {
             log.warn("Failed to preload facts: {}", e.getMessage());
             return List.of();
@@ -305,8 +299,7 @@ public class ContextSelectEngine {
     }
 
     private void loadStyleCandidates(String projectId,
-                                     String query,
-                                     ProjectLexicon projectLexicon,
+                                     TextSearchUtils.Scorer scorer,
                                      List<ContextItem> candidates) {
         try {
             Optional<StyleCard> styleOpt = cardStorage.getStyleCard(projectId);
@@ -317,7 +310,7 @@ public class ContextSelectEngine {
             if (looksLikeRewritePrompt(text)) {
                 return;
             }
-            double score = scoreText(query, text, projectLexicon);
+            double score = scorer.score(text, null);
             if (score <= 0) {
                 return;
             }
@@ -334,10 +327,9 @@ public class ContextSelectEngine {
         }
     }
 
-    private void loadCharacterCandidates(String query,
+    private void loadCharacterCandidates(TextSearchUtils.Scorer scorer,
                                          List<CharacterCard> cards,
                                          Map<String, Double> idfTable,
-                                         ProjectLexicon projectLexicon,
                                          List<ContextItem> candidates) {
         for (CharacterCard card : cards) {
             if (card == null || card.getName() == null || card.getName().isBlank()) {
@@ -346,7 +338,7 @@ public class ContextSelectEngine {
             String name = card.getName().trim();
             List<String> entities = uniqueStrings(buildCharacterEntities(card));
             String text = formatCharacterEvidence(card);
-            double score = scoreText(query, text, idfTable, projectLexicon);
+            double score = scorer.score(text, idfTable);
             if (score <= 0) {
                 continue;
             }
@@ -361,10 +353,9 @@ public class ContextSelectEngine {
         }
     }
 
-    private void loadWorldEntityCandidates(String query,
+    private void loadWorldEntityCandidates(TextSearchUtils.Scorer scorer,
                                            List<WorldCard> cards,
                                            Map<String, Double> idfTable,
-                                           ProjectLexicon projectLexicon,
                                            List<ContextItem> candidates) {
         for (WorldCard card : cards) {
             if (card == null || card.getName() == null || card.getName().isBlank()) {
@@ -373,7 +364,7 @@ public class ContextSelectEngine {
             String name = card.getName().trim();
             List<String> entities = buildWorldEntities(card);
             String text = formatWorldEntityEvidence(card);
-            double score = scoreText(query, text, idfTable, projectLexicon);
+            double score = scorer.score(text, idfTable);
             if (score > 0) {
                 candidates.add(ContextItem.builder()
                         .id("world_entity:" + name)
@@ -388,7 +379,7 @@ public class ContextSelectEngine {
             String category = card.getCategory() == null ? "" : card.getCategory().trim();
             if (!category.isBlank()) {
                 String categoryText = "类别: " + category;
-                double categoryScore = scoreText(query, categoryText + " " + name, idfTable, projectLexicon);
+                double categoryScore = scorer.score(categoryText + " " + name, idfTable);
                 if (categoryScore > 0) {
                     candidates.add(ContextItem.builder()
                             .id("world_entity:" + name + ":category")
@@ -403,10 +394,9 @@ public class ContextSelectEngine {
         }
     }
 
-    private void loadWorldRuleCandidates(String query,
+    private void loadWorldRuleCandidates(TextSearchUtils.Scorer scorer,
                                          List<WorldCard> cards,
                                          Map<String, Double> idfTable,
-                                         ProjectLexicon projectLexicon,
                                          List<ContextItem> candidates) {
         for (WorldCard card : cards) {
             if (card == null || card.getName() == null || card.getName().isBlank()) {
@@ -417,7 +407,7 @@ public class ContextSelectEngine {
             List<String> ruleTexts = extractWorldRules(card);
             for (int i = 0; i < ruleTexts.size(); i++) {
                 String ruleText = ruleTexts.get(i);
-                double score = scoreText(query, ruleText + " " + name, idfTable, projectLexicon);
+                double score = scorer.score(ruleText + " " + name, idfTable);
                 if (score <= 0) {
                     continue;
                 }
@@ -433,11 +423,11 @@ public class ContextSelectEngine {
         }
     }
 
-    private void loadFactCandidates(String query,
+    private void loadFactCandidates(TextSearchUtils.Scorer scorer,
                                     List<Fact> facts,
                                     Map<String, Double> idfTable,
                                     ProjectLexicon projectLexicon,
-                                    List<ContextItem> candidates) {
+                                    List<ContextItem> candidates, int topK) {
         List<FactRetrievalCandidate> ranked = new ArrayList<>();
         int idx = 0;
         for (Fact fact : facts) {
@@ -450,7 +440,7 @@ public class ContextSelectEngine {
                 idx++;
                 continue;
             }
-            double relevance = scoreText(query, statement, idfTable, projectLexicon);
+            double relevance = scorer.score(statement, idfTable);
             if (relevance <= 0) {
                 idx++;
                 continue;
@@ -473,11 +463,14 @@ public class ContextSelectEngine {
         ranked.sort(Comparator.comparingDouble(FactRetrievalCandidate::finalScore).reversed());
 
         List<FactRetrievalCandidate> selected = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
         for (FactRetrievalCandidate candidate : ranked) {
-            if (isNearDuplicateFactCandidate(candidate, selected, projectLexicon)) {
+            // Similar wording is not semantic equivalence: retain negation, quantities and state changes.
+            if (!seen.add(normalizeFactDedupKey(candidate.statement()))) {
                 continue;
             }
             selected.add(candidate);
+            if (selected.size() >= topK) break;
         }
 
         for (FactRetrievalCandidate candidate : selected) {
@@ -498,10 +491,9 @@ public class ContextSelectEngine {
     }
 
     private void loadSummaryCandidates(String projectId,
-                                       String query,
+                                       TextSearchUtils.Scorer scorer,
                                        List<String> chapters,
                                        List<String> excludeChapters,
-                                       ProjectLexicon projectLexicon,
                                        List<ContextItem> candidates) {
         try {
             Set<String> chapterFilter = chapters == null ? Set.of() : new LinkedHashSet<>(chapters);
@@ -517,16 +509,16 @@ public class ContextSelectEngine {
                 if (excluded.contains(chapter)) {
                     continue;
                 }
-                addSummaryCandidate(candidates, query, chapter, "brief_summary", summary.getBriefSummary(), null, projectLexicon);
+                addSummaryCandidate(candidates, scorer, chapter, "brief_summary", summary.getBriefSummary(), null);
 
                 List<String> keyEvents = summary.getKeyEvents() == null ? List.of() : summary.getKeyEvents();
                 for (int i = 0; i < keyEvents.size(); i++) {
-                    addSummaryCandidate(candidates, query, chapter, "key_events", keyEvents.get(i), i, projectLexicon);
+                    addSummaryCandidate(candidates, scorer, chapter, "key_events", keyEvents.get(i), i);
                 }
 
                 List<String> openLoops = summary.getOpenLoops() == null ? List.of() : summary.getOpenLoops();
                 for (int i = 0; i < openLoops.size(); i++) {
-                    addSummaryCandidate(candidates, query, chapter, "open_loops", openLoops.get(i), i, projectLexicon);
+                    addSummaryCandidate(candidates, scorer, chapter, "open_loops", openLoops.get(i), i);
                 }
             }
         } catch (Exception e) {
@@ -535,17 +527,16 @@ public class ContextSelectEngine {
     }
 
     private void addSummaryCandidate(List<ContextItem> candidates,
-                                     String query,
+                                     TextSearchUtils.Scorer scorer,
                                      String chapter,
                                      String field,
                                      String text,
-                                     Integer index,
-                                     ProjectLexicon projectLexicon) {
+                                     Integer index) {
         String cleaned = text == null ? "" : text.trim();
         if (cleaned.isBlank()) {
             return;
         }
-        double score = scoreText(query, cleaned, projectLexicon);
+        double score = scorer.score(cleaned, null);
         if (score <= 0) {
             return;
         }
@@ -570,13 +561,13 @@ public class ContextSelectEngine {
                                          int topK,
                                          List<String> textChunkChapters,
                                          List<String> textChunkExcludeChapters,
-                                         ProjectLexicon projectLexicon,
+                                         TextSearchUtils.Scorer scorer,
                                          List<ContextItem> candidates) {
         try {
             List<Map<String, Object>> chunks = draftStorage.searchTextChunks(
                     projectId,
                     query,
-                    Math.min(topK * 2, MAX_CANDIDATES_PER_TYPE),
+                    (int) Math.min((long) topK * 2, MAX_CANDIDATES_PER_TYPE),
                     textChunkChapters,
                     textChunkExcludeChapters,
                     false
@@ -589,7 +580,7 @@ public class ContextSelectEngine {
                 String chapter = String.valueOf(chunk.getOrDefault("chapter", ""));
                 double score = chunk.get("score") instanceof Number scoreNumber
                         ? scoreNumber.doubleValue()
-                        : scoreText(query, text, projectLexicon);
+                        : scorer.score(text, null);
                 Map<String, Object> source = new LinkedHashMap<>();
                 source.put("chapter", chapter);
                 source.put("chunk_index", chunk.getOrDefault("chunk_index", 0));
@@ -605,28 +596,6 @@ public class ContextSelectEngine {
         } catch (Exception e) {
             log.warn("Failed to load text chunks: {}", e.getMessage());
         }
-    }
-
-    /**
-     * 计算文本相关性分数（简化的 BM25 + 重叠分数）
-     */
-    private double scoreText(String query, String text) {
-        return scoreText(query, text, ProjectLexicon.empty());
-    }
-
-    private double scoreText(String query, String text, Map<String, Double> idfTable) {
-        return scoreText(query, text, idfTable, ProjectLexicon.empty());
-    }
-
-    private double scoreText(String query, String text, ProjectLexicon projectLexicon) {
-        return TextSearchUtils.calculateHybridScore(query, text, null, projectLexicon);
-    }
-
-    private double scoreText(String query,
-                             String text,
-                             Map<String, Double> idfTable,
-                             ProjectLexicon projectLexicon) {
-        return TextSearchUtils.calculateHybridScore(query, text, idfTable, projectLexicon);
     }
 
     private ProjectLexicon resolveProjectLexicon(String projectId) {
@@ -876,62 +845,11 @@ public class ContextSelectEngine {
                 || FACT_UNNAMED_ACTOR_RE.matcher(cleaned).matches();
     }
 
-    private boolean isNearDuplicateFactCandidate(FactRetrievalCandidate candidate,
-                                                 List<FactRetrievalCandidate> selected,
-                                                 ProjectLexicon projectLexicon) {
-        String normalized = normalizeFactDedupKey(candidate.statement());
-        Set<String> tokens = factDedupTokens(candidate.statement(), projectLexicon);
-        for (FactRetrievalCandidate existing : selected) {
-            String existingNormalized = normalizeFactDedupKey(existing.statement());
-            if (normalized.equals(existingNormalized)
-                    || normalized.contains(existingNormalized)
-                    || existingNormalized.contains(normalized)) {
-                return true;
-            }
-            double overlap = jaccard(tokens, factDedupTokens(existing.statement(), projectLexicon));
-            if (overlap >= 0.58d) {
-                return true;
-            }
-        }
-        return false;
-    }
-
     private String normalizeFactDedupKey(String statement) {
         if (statement == null) {
             return "";
         }
-        return statement.replaceAll("\\s+", "")
-                .replaceAll("[，,。；;：:“”\"'！？!?（）()\\-—]+", "")
-                .trim();
-    }
-
-    private Set<String> factDedupTokens(String statement, ProjectLexicon projectLexicon) {
-        LinkedHashSet<String> tokens = new LinkedHashSet<>();
-        for (String token : TextSearchUtils.tokenSet(statement, projectLexicon)) {
-            String normalized = token == null ? "" : token.trim();
-            if (normalized.isBlank() || normalized.length() < 2 || FACT_DEDUP_STOPWORDS.contains(normalized)) {
-                continue;
-            }
-            tokens.add(normalized);
-        }
-        return tokens;
-    }
-
-    private double jaccard(Set<String> left, Set<String> right) {
-        if (left == null || right == null || left.isEmpty() || right.isEmpty()) {
-            return 0.0d;
-        }
-        int intersection = 0;
-        for (String token : left) {
-            if (right.contains(token)) {
-                intersection++;
-            }
-        }
-        int union = left.size() + right.size() - intersection;
-        if (union <= 0) {
-            return 0.0d;
-        }
-        return (double) intersection / union;
+        return statement.strip().replaceAll("\\s+", " ");
     }
 
     private record FactRetrievalCandidate(String id,

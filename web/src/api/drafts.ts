@@ -1,4 +1,5 @@
 import { http, seg, Timeout } from '@/lib/http';
+import { queueDraftWrite } from '@/lib/draft-write-barrier';
 import type {
   ChapterSummary,
   DeAiRewriteConfig,
@@ -13,6 +14,18 @@ export interface DraftSaveRequest {
   content: string;
   word_count?: number;
   pending_confirmations?: string[];
+}
+
+export interface DraftContinuityReport {
+  revision: string;
+  source_chapter: string;
+  source_hash: string;
+  draft_hash: string;
+  coverage: 'local_rules_only' | 'local_and_semantic';
+  semantic_status?: 'not_requested' | 'unchecked' | 'partial' | 'complete';
+  truncated: boolean;
+  reference_excerpts?: string;
+  issues: Array<{ type: string; severity: string; evidence: string; offset: number; message: string }>;
 }
 
 /** `/content` 与 `/autosave` 都接受顺带改标题，省一次请求。 */
@@ -43,6 +56,16 @@ export interface ReorderChaptersRequest {
 }
 
 export const draftsApi = {
+  checkSemantics: (projectId: string, chapter: string, content: string, revision: string, maxTokens: number) =>
+    http.post<DraftContinuityReport>(`${base(projectId)}/${seg(chapter)}/semantic-check`, {
+      body: { content, revision, max_tokens: maxTokens }, timeout: Timeout.llm,
+    }),
+
+  checkContinuity: (projectId: string, chapter: string, content: string) =>
+    http.post<DraftContinuityReport>(`${base(projectId)}/${seg(chapter)}/continuity-check`, {
+      body: { content },
+    }),
+
   listChapters: (projectId: string) => http.get<string[]>(base(projectId)),
 
   latest: (projectId: string, chapter: string) =>
@@ -59,27 +82,27 @@ export const draftsApi = {
 
   // 后端保存后会串行重建绑定和记忆包，所以给长超时
   save: (projectId: string, chapter: string, body: DraftSaveRequest) =>
-    http.put<Draft>(`${base(projectId)}/${seg(chapter)}`, { body, timeout: Timeout.draftSave }),
+    queueDraftWrite(projectId, chapter, () =>
+      http.put<Draft>(`${base(projectId)}/${seg(chapter)}`, { body, timeout: Timeout.draftSave })),
 
   updateContent: (projectId: string, chapter: string, body: UpdateContentRequest) =>
-    http.put<JsonRecord>(`${base(projectId)}/${seg(chapter)}/content`, {
+    queueDraftWrite(projectId, chapter, () => http.put<JsonRecord>(`${base(projectId)}/${seg(chapter)}/content`, {
       body,
       timeout: Timeout.draftSave,
-    }),
+    })),
 
-  /** 自动保存：只落盘正文，不触发下游重建，所以用短超时并允许被后续输入打断。 */
+  /** Writes are ordered and awaited by generation; aborting a fetch cannot undo a server write. */
   autosave: (
     projectId: string,
     chapter: string,
     body: UpdateContentRequest,
     options?: { signal?: AbortSignal; keepalive?: boolean },
   ) =>
-    http.put<JsonRecord>(`${base(projectId)}/${seg(chapter)}/autosave`, {
+    queueDraftWrite(projectId, chapter, () => http.put<JsonRecord>(`${base(projectId)}/${seg(chapter)}/autosave`, {
       body,
       timeout: Timeout.quick,
-      signal: options?.signal,
       keepalive: options?.keepalive,
-    }),
+    })),
 
   removeChapter: (projectId: string, chapter: string) =>
     http.delete<JsonRecord>(`${base(projectId)}/${seg(chapter)}`, { timeout: Timeout.llm }),

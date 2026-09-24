@@ -3,6 +3,7 @@ package com.moxu.orchestrator;
 import com.moxu.agent.ArchivistAgent;
 import com.moxu.agent.EditorAgent;
 import com.moxu.agent.WriterAgent;
+import com.moxu.analysis.AnalysisContext;
 import com.moxu.controller.BindingsController;
 import com.moxu.context.BudgetManager;
 import com.moxu.context.ContextItem;
@@ -30,6 +31,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.Optional;
 import java.util.regex.Matcher;
@@ -55,6 +58,11 @@ public class Orchestrator {
     private final BindingsController bindingsController;
     private final AdaptiveHintResolver adaptiveHintResolver;
     private final ChapterAnalysisExecutor analysisExecutor;
+    private com.moxu.analysis.DraftSemanticReviewService semanticReview;
+
+    public void setSemanticReview(com.moxu.analysis.DraftSemanticReviewService semanticReview) {
+        this.semanticReview = semanticReview;
+    }
     
     private SessionStatus currentStatus = SessionStatus.IDLE;
     private String currentProjectId;
@@ -115,6 +123,15 @@ public class Orchestrator {
     
     // 缓存最近的流式结果
     private final Map<String, Map<String, Object>> lastStreamResults = new ConcurrentHashMap<>();
+
+    // 保存草稿触发的上下文/记忆包刷新：单线程后台跑，重复保存合并成「再补一轮」
+    private final ExecutorService refreshExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "moxu-draft-refresh");
+        t.setDaemon(true);
+        return t;
+    });
+    private final Set<String> refreshInFlight = ConcurrentHashMap.newKeySet();
+    private final Set<String> refreshQueued = ConcurrentHashMap.newKeySet();
     
     public Orchestrator(LlmGateway llmGateway, CardStorage cardStorage, DraftStorage draftStorage,
                         CanonStorage canonStorage, MemoryPackStorage memoryPackStorage,
@@ -499,8 +516,13 @@ public class Orchestrator {
      */
     public Map<String, Object> processFeedback(String projectId, String chapter, String feedback,
                                                 String action, List<String> rejectedEntities) {
+        return processFeedback(projectId, chapter, feedback, action, rejectedEntities, null);
+    }
+
+    public Map<String, Object> processFeedback(String projectId, String chapter, String feedback,
+                                                String action, List<String> rejectedEntities, String continuityRevision) {
         if ("confirm".equals(action)) {
-            return finalizeChapter(projectId, chapter);
+            return finalizeChapter(projectId, chapter, continuityRevision);
         }
         
         iterationCount++;
@@ -616,7 +638,30 @@ public class Orchestrator {
         );
     }
 
+    /**
+     * 保存草稿后异步重建作家上下文/记忆包。后台单线程执行，
+     * 同一章在跑期间再保存只标记「跑完补一轮」，不让保存请求等研究循环，
+     * 也不会给 LLM 研究调用排队堆积。
+     */
     public void refreshDraftArtifacts(String projectId, String chapter) {
+        String key = projectId + '|' + chapter;
+        if (!refreshInFlight.add(key)) {
+            refreshQueued.add(key);
+            return;
+        }
+        refreshExecutor.submit(() -> {
+            try {
+                do {
+                    refreshQueued.remove(key);
+                    doRefreshDraftArtifacts(projectId, chapter);
+                } while (refreshQueued.contains(key));
+            } finally {
+                refreshInFlight.remove(key);
+            }
+        });
+    }
+
+    private void doRefreshDraftArtifacts(String projectId, String chapter) {
         try {
             Optional<Draft> draftOpt = draftStorage.getLatestDraft(projectId, chapter);
             if (draftOpt.isEmpty()) {
@@ -797,7 +842,7 @@ public class Orchestrator {
         return response;
     }
     
-    private synchronized Map<String, Object> finalizeChapter(String projectId, String chapter) {
+    private synchronized Map<String, Object> finalizeChapter(String projectId, String chapter, String continuityRevision) {
         try {
             List<String> versions = draftStorage.listDraftVersions(projectId, chapter);
             if (versions.isEmpty()) {
@@ -812,6 +857,14 @@ public class Orchestrator {
             }
             
             Draft draft = draftOpt.get();
+            var review = semanticReview == null ? com.moxu.quality.ContinuityProtection.review(
+                    draftStorage, projectId, chapter, draft.getContent())
+                    : semanticReview.review(projectId, chapter, draft.getContent());
+            if ((!review.issues().isEmpty() || continuityRevision != null)
+                    && !review.revision().equals(continuityRevision)) {
+                throw new org.springframework.web.server.ResponseStatusException(
+                        org.springframework.http.HttpStatus.CONFLICT, "正文或前文已变化，请重新核对连续性提示后定稿");
+            }
             draftStorage.saveFinalDraft(projectId, chapter, draft.getContent());
 
             // 对齐 Python _finalize_chapter：确认后自动触发分析（摘要 + 事实表更新）
@@ -831,6 +884,8 @@ public class Orchestrator {
                     "final_draft", draft
             );
             
+        } catch (org.springframework.web.server.ResponseStatusException e) {
+            throw e;
         } catch (Exception e) {
             log.error("Finalization error", e);
             return handleError("Finalization error: " + e.getMessage());
@@ -1170,10 +1225,9 @@ public class Orchestrator {
         String failure = "";
         try {
             long stageStartedAt = System.nanoTime();
-            String analysisContent = draftStorage.getFinalDraft(projectId, normalizedChapter)
-                    .orElseGet(() -> draftStorage.getLatestDraft(projectId, normalizedChapter)
-                            .map(draft -> draft.getContent() != null ? draft.getContent() : "")
-                            .orElse(""));
+            String analysisContent = draftStorage.getLatestDraft(projectId, normalizedChapter)
+                    .map(draft -> draft.getContent() != null ? draft.getContent() : "")
+                    .or(() -> draftStorage.getFinalDraft(projectId, normalizedChapter)).orElse("");
             stageTimings.put("load_analysis_content", elapsedMillis(stageStartedAt));
 
             analysis = com.moxu.quality.CanonEvidenceGuard.apply(analysis, analysisContent);
@@ -1210,7 +1264,7 @@ public class Orchestrator {
                         "timeline_events", analysisTimeline,
                         "character_states", analysisStates
                 ));
-                if (summary.getOpenLoops() == null || summary.getOpenLoops().isEmpty()) {
+                if (!AnalysisContext.bulk() && (summary.getOpenLoops() == null || summary.getOpenLoops().isEmpty())) {
                     ChapterSummary refreshed = archivistAgent.generateChapterSummary(
                             projectId,
                             normalizedChapter,
@@ -1342,7 +1396,18 @@ public class Orchestrator {
 
             stageStartedAt = System.nanoTime();
             try {
-                memoryPackStorage.writePack(projectId, normalizedChapter, buildMemoryPackPayload(projectId, normalizedChapter, traceId));
+                if (AnalysisContext.bulk() && (AnalysisContext.options().isBulkDisableFocusBinding()
+                        || AnalysisContext.options().isBulkDisableSemanticRerank())) {
+                    if (bindingsController != null) bindingsController.rebuildBindingsForChapter(projectId, normalizedChapter);
+                    Map<String, Object> pack = memoryPackStorage.readPack(projectId, normalizedChapter);
+                    if (pack == null) pack = new LinkedHashMap<>();
+                    pack.put("context_stale", true);
+                    pack.put("chapter_digest", buildChapterDigest(projectId, normalizedChapter));
+                    memoryPackStorage.writePack(projectId, normalizedChapter, pack);
+                } else {
+                    memoryPackStorage.writePack(projectId, normalizedChapter,
+                            AnalysisContext.stage("binding_rerank", () -> buildMemoryPackPayload(projectId, normalizedChapter, traceId)));
+                }
             } catch (Exception e) {
                 warnings.add("记忆包保存失败");
                 log.warn("saveAnalysis: 保存 memory pack 失败: {}", e.getMessage());
@@ -1514,9 +1579,23 @@ public class Orchestrator {
         // These stages read the same draft and do not depend on each other's output.
         ChapterSummary summary;
         Map<String, Object> canonUpdates;
-        if (analysisExecutor == null) {
-            summary = archivistAgent.generateChapterSummary(projectId, chapter, title, content);
-            canonUpdates = archivistAgent.extractCanonUpdates(projectId, chapter, content);
+        var options = AnalysisContext.options();
+        ArchivistAgent.CombinedAnalysis combined = null;
+        if (options != null && options.isCombined()) {
+            try {
+                combined = AnalysisContext.stage("combined", () -> archivistAgent.analyzeCombined(
+                        projectId, chapter, title, content, options.isCompactPrompt(), options.getMaxOutputTokens()));
+            } catch (ArchivistAgent.InvalidExtraction e) {
+                if (!options.isLegacyFallback()) throw e;
+                log.info("Combined analysis needs legacy recovery: project={}, chapter={}", projectId, chapter);
+            }
+        }
+        if (combined != null) {
+            summary = combined.summary();
+            canonUpdates = combined.canon();
+        } else if (analysisExecutor == null) {
+            summary = AnalysisContext.stage("summary", () -> archivistAgent.generateChapterSummary(projectId, chapter, title, content));
+            canonUpdates = AnalysisContext.stage("canon", () -> archivistAgent.extractCanonUpdates(projectId, chapter, content));
         } else {
             ChapterAnalysisExecutor.Result result = analysisExecutor.analyze(
                     archivistAgent, projectId, chapter, title, content);
@@ -3168,12 +3247,12 @@ public class Orchestrator {
                 """.formatted(query, payload);
         try {
             String provider = llmGateway.getProviderForAgent("writer");
-            com.moxu.llm.LlmResponse response = llmGateway.chatOnce(
+            com.moxu.llm.LlmResponse response = AnalysisContext.stage("rerank", () -> llmGateway.chatOnce(
                     List.of(Map.of("role", "user", "content", prompt)),
                     provider,
                     0.0,
                     RERANK_MAX_TOKENS
-            );
+            ));
             String content = response.getContent() == null ? "" : response.getContent().trim();
             int start = content.indexOf('{');
             int end = content.lastIndexOf('}');

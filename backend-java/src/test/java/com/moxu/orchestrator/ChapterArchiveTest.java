@@ -17,6 +17,22 @@ class ChapterArchiveTest {
         ReflectionTestUtils.setField(value, "dataDir", directory.toString()); return value;
     }
 
+    @Test void titleOnlyChangeRefreshesSummaryWithoutRepeatingCanon() throws Exception {
+        var drafts = storage(new DraftStorage());
+        var agent = mock(ArchivistAgent.class);
+        when(agent.generateChapterSummary(any(), any(), any(), any()))
+                .thenAnswer(invocation -> ChapterSummary.builder().briefSummary("A summary").build());
+        when(agent.extractCanonUpdates(any(), any(), any()))
+                .thenReturn(Map.of("facts", List.of(), "timeline_events", List.of(), "character_states", List.of()));
+        when(agent.generateVolumeSummary(any(), any(), any())).thenReturn(Map.of("volume_id", "V1"));
+        var archive = new ChapterArchive(agent, drafts, storage(new CanonStorage()), storage(new MemoryPackStorage()));
+        archive.run("book", "V1C1", "Original source.", "Old title", message -> {});
+        archive.run("book", "V1C1", "Original source.", "New title", message -> {});
+        verify(agent, times(2)).generateChapterSummary(any(), any(), any(), any());
+        verify(agent, times(1)).extractCanonUpdates(any(), any(), any());
+        assertEquals("New title", drafts.getChapterSummary("book", "V1C1").orElseThrow().getTitle());
+    }
+
     @Test void failedExtractionPersistsPartialStatusAndRetrySkipsCompletedStages() throws Exception {
         var drafts = storage(new DraftStorage());
         var canon = storage(new CanonStorage());

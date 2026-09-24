@@ -38,12 +38,17 @@ public class DraftStorage extends BaseStorage {
     private static final String TEXT_CHUNK_INDEX_CHUNKS = "chunks.json";
     private static final String TEXT_CHUNK_INDEX_INVERTED = "inverted_index.json";
     private static final int TOKENIZER_VERSION = 5;
-    private static final int CHUNKING_VERSION = 1;
+    private static final int CHUNKING_VERSION = 2;
+    private static final int TEXT_INDEX_FORMAT = 2;
 
     @Autowired(required = false)
     private ProjectLexiconResolver projectLexiconResolver;
 
     private volatile TextChunkIndexCache textChunkIndexCache;
+    private final Map<String, Object> textIndexLocks = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Map<Path, Object> draftWriteLocks = new java.util.concurrent.ConcurrentHashMap<>();
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private MemoryPackStorage memoryPackStorage;
     
     // ========== 草稿操作 ==========
 
@@ -79,14 +84,28 @@ public class DraftStorage extends BaseStorage {
     public Draft saveCurrentDraft(String projectId, String chapter, String content, 
                                    Integer wordCount, List<String> pendingConfirmations,
                                    boolean createPrevBackup) throws IOException {
+        synchronized (draftWriteLock(projectId, chapter)) {
+            return saveCurrentDraftLocked(projectId, chapter, content, wordCount, pendingConfirmations, createPrevBackup);
+        }
+    }
+
+    private Object draftWriteLock(String projectId, String chapter) {
+        Path path = getFinalPath(projectId, canonicalizeChapterId(chapter)).toAbsolutePath().normalize();
+        return draftWriteLocks.computeIfAbsent(path, ignored -> new Object());
+    }
+
+    private Draft saveCurrentDraftLocked(String projectId, String chapter, String content,
+                                        Integer wordCount, List<String> pendingConfirmations,
+                                        boolean createPrevBackup) throws IOException {
         String canonical = canonicalizeChapterId(chapter);
         Path finalPath = getFinalPath(projectId, canonical);
+        boolean changed = !Files.exists(finalPath) || !Files.readString(finalPath).equals(content);
         Path historyDir = finalPath.getParent().resolve("history");
         
         int wc = wordCount != null ? wordCount : content.length();
         
         // 备份旧版本
-        if (createPrevBackup && Files.exists(finalPath)) {
+        if (changed && createPrevBackup && Files.exists(finalPath)) {
             rotateDraftHistory(finalPath, historyDir);
         }
         
@@ -105,6 +124,7 @@ public class DraftStorage extends BaseStorage {
         
         Path metaPath = finalPath.resolveSibling("final.meta.yaml");
         writeYaml(metaPath, draft);
+        if (changed && memoryPackStorage != null) memoryPackStorage.invalidateFrom(projectId, canonical);
         
         return draft;
     }
@@ -189,6 +209,114 @@ public class DraftStorage extends BaseStorage {
         return chapters;
     }
     
+    /** Audit reads must distinguish an empty manuscript from an unreadable one. */
+    public Map<String, String> readManuscriptForAudit(String projectId) throws IOException {
+        return readManuscriptSnapshot(projectId, true);
+    }
+
+    public Map<String, String> readManuscriptBefore(String projectId, String target) throws IOException {
+        String chapter = canonicalizeChapterId(target);
+        if (!CHAPTER_ID_PATTERN.matcher(chapter).matches()) throw new IllegalArgumentException("Invalid chapter");
+        return readManuscriptSnapshot(projectId, true, chapter);
+    }
+
+    public record ChapterEnding(String chapter, String text) {}
+
+    /** Read only the nearest written predecessor; never reuse a cached derived ending. */
+    public Optional<ChapterEnding> readPreviousChapterEnding(String projectId, String target, int maxChars)
+            throws IOException {
+        if (maxChars <= 0) return Optional.empty();
+        return readPreviousChapterSource(projectId, target)
+                .map(source -> new ChapterEnding(source.chapter(), endingExcerpt(source.text(), maxChars)));
+    }
+
+    public static String endingExcerpt(String content, int maxChars) {
+        if (content == null || maxChars <= 0) return "";
+        String text = content.stripTrailing();
+        int start = Math.max(0, text.length() - maxChars);
+        if (start > 0) {
+            int newline = text.indexOf('\n', start);
+            if (newline >= 0 && newline - start < 200) start = newline + 1;
+            if (start < text.length() && Character.isLowSurrogate(text.charAt(start))) start++;
+        }
+        return text.substring(start);
+    }
+
+    public Optional<ChapterEnding> readPreviousChapterSource(String projectId, String target) throws IOException {
+        String current = canonicalizeChapterId(target);
+        if (!CHAPTER_ID_PATTERN.matcher(current).matches()) return Optional.empty();
+        Path root = getProjectPath(projectId).resolve("drafts");
+        if (Files.notExists(root)) return Optional.empty();
+        Map<String, Path> preceding = new TreeMap<>((a, b) -> compareChapterIds(b, a));
+        try (Stream<Path> directories = Files.list(root)) {
+            for (Path directory : directories.toList()) {
+                if (!Files.readAttributes(directory, java.nio.file.attribute.BasicFileAttributes.class).isDirectory())
+                    continue;
+                String chapter = canonicalizeChapterId(directory.getFileName().toString());
+                if (!CHAPTER_ID_PATTERN.matcher(chapter).matches() || compareChapterIds(chapter, current) >= 0)
+                    continue;
+                if (preceding.putIfAbsent(chapter, directory) != null)
+                    throw new IOException("Ambiguous chapter directories: " + chapter);
+            }
+        }
+        for (var entry : preceding.entrySet()) {
+            Path source = entry.getValue().resolve("final.md");
+            if (Files.notExists(source)) {
+                source = null;
+                long latest = Long.MIN_VALUE;
+                try (Stream<Path> versions = Files.list(entry.getValue())) {
+                    for (Path version : versions.sorted().toList()) {
+                        if (!version.getFileName().toString().matches("draft_.*\\.md")) continue;
+                        long modified = Files.getLastModifiedTime(version).toMillis();
+                        if (modified > latest) { latest = modified; source = version; }
+                    }
+                }
+            }
+            if (source == null) continue;
+            String text = readText(source).stripTrailing();
+            if (text.isBlank()) continue;
+            return Optional.of(new ChapterEnding(entry.getKey(), text));
+        }
+        return Optional.empty();
+    }
+
+    private Map<String, String> readManuscriptSnapshot(String projectId, boolean includeLegacyVersions) throws IOException {
+        return readManuscriptSnapshot(projectId, includeLegacyVersions, null);
+    }
+
+    private Map<String, String> readManuscriptSnapshot(String projectId, boolean includeLegacyVersions,
+                                                     String beforeChapter) throws IOException {
+        Path root = getProjectPath(projectId).resolve("drafts");
+        Map<String, String> result = new TreeMap<>(this::compareChapterIds);
+        if (Files.notExists(root)) return result;
+        Set<String> seen = new HashSet<>();
+        try (Stream<Path> directories = Files.list(root)) {
+            for (Path directory : directories.toList()) {
+                var attributes = Files.readAttributes(directory, java.nio.file.attribute.BasicFileAttributes.class);
+                if (!attributes.isDirectory()) continue;
+                String chapter = canonicalizeChapterId(directory.getFileName().toString());
+                if (!CHAPTER_ID_PATTERN.matcher(chapter).matches()) continue;
+                if (beforeChapter != null && compareChapterIds(chapter, beforeChapter) >= 0) continue;
+                if (!seen.add(chapter)) throw new IOException("Ambiguous chapter directories: " + chapter);
+                Path source = directory.resolve("final.md");
+                if (Files.notExists(source)) {
+                    if (!includeLegacyVersions) continue;
+                    source = null;
+                    long latest = Long.MIN_VALUE;
+                    try (Stream<Path> versions = Files.list(directory)) {
+                        for (Path version : versions.sorted().toList()) {
+                            if (!version.getFileName().toString().matches("draft_.*\\.md")) continue;
+                            long modified = Files.getLastModifiedTime(version).toMillis();
+                            if (modified > latest) { latest = modified; source = version; }
+                        }
+                    }
+                }
+                if (source != null) result.put(chapter, readText(source));
+            }
+        }
+        return result;
+    }
+
     public boolean deleteChapter(String projectId, String chapter) throws IOException {
         String canonical = canonicalizeChapterId(chapter);
         boolean deleted = false;
@@ -333,12 +461,19 @@ public class DraftStorage extends BaseStorage {
      * 保存最终稿
      */
     public void saveFinalDraft(String projectId, String chapter, String content) throws IOException {
+        synchronized (draftWriteLock(projectId, chapter)) {
+            saveFinalDraftLocked(projectId, chapter, content);
+        }
+    }
+
+    private void saveFinalDraftLocked(String projectId, String chapter, String content) throws IOException {
         String canonical = canonicalizeChapterId(chapter);
         Path finalPath = getFinalPath(projectId, canonical);
+        boolean changed = !Files.exists(finalPath) || !Files.readString(finalPath).equals(content);
         
         // 备份旧版本
         Path historyDir = finalPath.getParent().resolve("history");
-        if (Files.exists(finalPath)) {
+        if (changed && Files.exists(finalPath)) {
             rotateDraftHistory(finalPath, historyDir);
         }
         
@@ -356,6 +491,7 @@ public class DraftStorage extends BaseStorage {
         
         Path metaPath = finalPath.resolveSibling("final.meta.yaml");
         writeYaml(metaPath, draft);
+        if (changed && memoryPackStorage != null) memoryPackStorage.invalidateFrom(projectId, canonical);
     }
 
     public List<Map<String, Object>> searchTextChunks(String projectId, String query, int limit,
@@ -368,96 +504,65 @@ public class DraftStorage extends BaseStorage {
             return List.of();
         }
 
+        // An explicit nonempty filter that normalizes to nothing must not become unrestricted.
+        if (chapters != null && !chapters.isEmpty() && normalizeChapterSet(chapters).isEmpty()) return List.of();
         ProjectLexicon projectLexicon = resolveProjectLexicon(projectId);
-        if (rebuild) {
-            try {
-                rebuildTextChunkIndex(projectId, projectLexicon);
-            } catch (Exception e) {
-                log.warn("rebuildTextChunkIndex failed (continuing with fallback scan): {}", e.getMessage());
-            }
-        }
-
         try {
-            Optional<TextChunkIndex> indexOpt = loadTextChunkIndex(projectId, projectLexicon);
-            if (indexOpt.isPresent()) {
-                return searchTextChunksWithIndex(indexOpt.get(), query, limit, chapters, excludeChapters, projectLexicon);
-            }
-        } catch (Exception e) {
-            log.warn("searchTextChunks index path failed, fallback to scan: {}", e.getMessage());
+            TextChunkIndex index = refreshTextChunkIndex(projectId, projectLexicon, rebuild);
+            return searchTextChunksWithIndex(index, query, limit, chapters, excludeChapters, projectLexicon);
+        } catch (IOException e) {
+            log.warn("Text search snapshot could not be read; refusing stale index: {}", e.getMessage());
+            return List.of();
         }
-
-        Set<String> includeSet = normalizeChapterSet(chapters);
-        Set<String> excludeSet = normalizeChapterSet(excludeChapters);
-        List<Map<String, Object>> results = new ArrayList<>();
-
-        for (String chapter : listChapters(projectId)) {
-            String canonical = canonicalizeChapterId(chapter);
-            if (!includeSet.isEmpty() && !includeSet.contains(canonical)) {
-                continue;
-            }
-            if (excludeSet.contains(canonical)) {
-                continue;
-            }
-
-            Optional<String> draftOpt = getFinalDraft(projectId, canonical);
-            if (draftOpt.isEmpty()) {
-                continue;
-            }
-
-            List<String> chunks = splitIntoChunks(draftOpt.get());
-            for (int i = 0; i < chunks.size(); i++) {
-                String chunk = chunks.get(i);
-                double score = scoreChunk(query, chunk, projectLexicon);
-                if (score <= 0) {
-                    continue;
-                }
-
-                Map<String, Object> item = new LinkedHashMap<>();
-                item.put("chapter", canonical);
-                item.put("text", chunk);
-                item.put("score", score);
-                item.put("chunk_index", i);
-                item.put("source", Map.of(
-                        "chapter", canonical,
-                        "chunk_index", i,
-                        "field", "final_draft"
-                ));
-                results.add(item);
-            }
-        }
-
-        results.sort((a, b) -> Double.compare(
-                ((Number) b.getOrDefault("score", 0.0)).doubleValue(),
-                ((Number) a.getOrDefault("score", 0.0)).doubleValue()
-        ));
-        if (results.size() > limit) {
-            return new ArrayList<>(results.subList(0, limit));
-        }
-        return results;
     }
 
     public Map<String, Object> rebuildTextChunkIndex(String projectId) {
-        return rebuildTextChunkIndex(projectId, resolveProjectLexicon(projectId));
+        try {
+            return new LinkedHashMap<>(refreshTextChunkIndex(projectId, resolveProjectLexicon(projectId), true).meta);
+        } catch (IOException e) { throw new java.io.UncheckedIOException(e); }
     }
 
-    private Map<String, Object> rebuildTextChunkIndex(String projectId, ProjectLexicon projectLexicon) {
+    private TextChunkIndex refreshTextChunkIndex(String projectId, ProjectLexicon lexicon, boolean force) throws IOException {
+        synchronized (textIndexLocks.computeIfAbsent(projectId, ignored -> new Object())) {
+            Map<String, String> manuscript = readManuscriptSnapshot(projectId, false);
+            Map<String, String> hashes = new LinkedHashMap<>();
+            manuscript.forEach((chapter, text) -> hashes.put(chapter, textFingerprint(text)));
+            TextChunkIndex previous = force ? null : loadTextChunkIndex(projectId, lexicon).orElse(null);
+            if (previous != null && hashes.equals(previous.meta.get("source_hashes"))) return previous;
+            return buildTextChunkIndex(projectId, lexicon, manuscript, hashes, previous);
+        }
+    }
+
+    private TextChunkIndex buildTextChunkIndex(String projectId, ProjectLexicon projectLexicon,
+                                               Map<String, String> manuscript, Map<String, String> hashes,
+                                               TextChunkIndex previous) {
         long startedAt = System.currentTimeMillis();
-        int chaptersProcessed = 0;
-        int chunkTotal = 0;
+        int reused = 0;
         long totalDocLen = 0;
         Map<String, ChunkMeta> chunkById = new LinkedHashMap<>();
         Map<String, List<String>> inverted = new LinkedHashMap<>();
-
-        for (String chapter : listChapters(projectId)) {
-            String canonical = canonicalizeChapterId(chapter);
-            Optional<String> draftOpt = getFinalDraft(projectId, canonical);
-            if (draftOpt.isEmpty()) {
+        Map<String, List<ChunkMeta>> oldChapters = new HashMap<>();
+        Map<String, Set<String>> oldTerms = new HashMap<>();
+        Map<?, ?> oldHashes = previous != null && previous.meta.get("source_hashes") instanceof Map<?, ?> map ? map : Map.of();
+        if (previous != null) {
+            previous.chunks.values().forEach(chunk ->
+                    oldChapters.computeIfAbsent(chunk.chapter, ignored -> new ArrayList<>()).add(chunk));
+            previous.inverted.forEach((term, ids) -> ids.forEach(id ->
+                    oldTerms.computeIfAbsent(id, ignored -> new LinkedHashSet<>()).add(term)));
+        }
+        for (var source : manuscript.entrySet()) {
+            String canonical = source.getKey();
+            if (hashes.get(canonical).equals(oldHashes.get(canonical))) {
+                reused++;
+                for (ChunkMeta chunk : oldChapters.getOrDefault(canonical, List.of())) {
+                    chunkById.put(chunk.chunkId, chunk);
+                    totalDocLen += chunk.docLen;
+                    for (String term : oldTerms.getOrDefault(chunk.chunkId, Set.of()))
+                        inverted.computeIfAbsent(term, ignored -> new ArrayList<>()).add(chunk.chunkId);
+                }
                 continue;
             }
-            chaptersProcessed++;
-            List<String> chunks = splitIntoChunks(draftOpt.get());
-            chunkTotal += chunks.size();
-
+            List<String> chunks = splitIntoChunks(source.getValue());
             for (int i = 0; i < chunks.size(); i++) {
                 String text = chunks.get(i);
                 if (text == null || text.isBlank()) {
@@ -465,15 +570,15 @@ public class DraftStorage extends BaseStorage {
                 }
                 String chunkId = chunkId(canonical, i);
                 int len = text.length();
-                int docLen = TextSearchUtils.estimateDocLength(text, projectLexicon);
+                Map<String, Integer> counts = TextSearchUtils.tokenizeCounts(text, projectLexicon);
+                int docLen = Math.max(1, counts.values().stream().mapToInt(Integer::intValue).sum());
                 double lengthFactor = Math.min(1.0, len / (double) TEXT_CHUNK_MIN_LEN_FACTOR_BASE);
 
                 ChunkMeta meta = new ChunkMeta(chunkId, canonical, i, text, len, lengthFactor, docLen);
                 chunkById.put(chunkId, meta);
                 totalDocLen += docLen;
 
-                Set<String> terms = TextSearchUtils.tokenSet(text, projectLexicon);
-                for (String term : terms) {
+                for (String term : counts.keySet()) {
                     inverted.computeIfAbsent(term, ignored -> new ArrayList<>()).add(chunkId);
                 }
             }
@@ -482,11 +587,16 @@ public class DraftStorage extends BaseStorage {
         Map<String, Object> meta = new LinkedHashMap<>();
         meta.put("project_id", projectId);
         meta.put("built_at", startedAt);
+        meta.put("format_version", TEXT_INDEX_FORMAT);
         meta.put("chunking_version", CHUNKING_VERSION);
         meta.put("tokenizer_version", TOKENIZER_VERSION);
         meta.put("lexicon_fingerprint", projectLexicon.fingerprint());
         meta.put("lexicon_term_count", projectLexicon.size());
-        meta.put("chapters_processed", chaptersProcessed);
+        meta.put("chapters_processed", manuscript.size());
+        meta.put("source_hashes", hashes);
+        meta.put("refreshed_chapters", manuscript.size() - reused);
+        meta.put("reused_chapters", reused);
+        meta.put("removed_chapters", oldHashes.keySet().stream().filter(chapter -> !hashes.containsKey(chapter)).count());
         meta.put("chunks_total", chunkById.size());
         meta.put("terms_total", inverted.size());
         meta.put("avg_doc_len", chunkById.isEmpty() ? 1.0 : totalDocLen / (double) chunkById.size());
@@ -495,16 +605,29 @@ public class DraftStorage extends BaseStorage {
         try {
             Path dir = textChunkIndexDir(projectId);
             ensureDir(dir);
+            String chunksJson = jsonMapper.writerWithDefaultPrettyPrinter().writeValueAsString(chunkById);
+            String invertedJson = jsonMapper.writerWithDefaultPrettyPrinter().writeValueAsString(inverted);
+            meta.put("chunks_hash", textFingerprint(chunksJson));
+            meta.put("inverted_hash", textFingerprint(invertedJson));
+            atomicWrite(dir.resolve(TEXT_CHUNK_INDEX_CHUNKS), chunksJson);
+            atomicWrite(dir.resolve(TEXT_CHUNK_INDEX_INVERTED), invertedJson);
+            // Commit the checksummed manifest last; interrupted writes cannot bless mixed generations.
             writeJson(dir.resolve(TEXT_CHUNK_INDEX_META), meta);
-            writeJson(dir.resolve(TEXT_CHUNK_INDEX_CHUNKS), chunkById);
-            writeJson(dir.resolve(TEXT_CHUNK_INDEX_INVERTED), inverted);
-            // 更新缓存
             textChunkIndexCache = null;
         } catch (IOException e) {
             log.error("写入 text_chunk_index 失败", e);
         }
 
-        return meta;
+        TextChunkIndex index = new TextChunkIndex(Collections.unmodifiableMap(meta),
+                Collections.unmodifiableMap(chunkById), Collections.unmodifiableMap(inverted));
+        return index;
+    }
+
+    private static String textFingerprint(String text) {
+        try {
+            return HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(text.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        } catch (java.security.NoSuchAlgorithmException e) { throw new IllegalStateException(e); }
     }
     
     // ========== 章节摘要 ==========
@@ -890,22 +1013,27 @@ public class DraftStorage extends BaseStorage {
     private void rotateDraftHistory(Path finalPath, Path historyDir) throws IOException {
         ensureDir(historyDir);
         
-        String ts = LocalDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss"));
-        Path backupPath = historyDir.resolve("final_" + ts + ".md");
-        
-        Files.move(finalPath, backupPath);
+        String ts = LocalDateTime.now(ZoneOffset.UTC).format(DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmssSSSSSSSSS"));
+        Path backupPath = Files.createTempFile(historyDir, "final_" + ts + "_", ".md");
+        try {
+            // Keep the current manuscript readable until its atomic replacement succeeds.
+            Files.copy(finalPath, backupPath, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException failure) {
+            try { Files.deleteIfExists(backupPath); } catch (IOException cleanup) { failure.addSuppressed(cleanup); }
+            throw failure;
+        }
         
         // 清理旧备份
         try (Stream<Path> paths = Files.list(historyDir)) {
             List<Path> backups = paths
                     .filter(p -> p.getFileName().toString().startsWith("final_") && p.toString().endsWith(".md"))
-                    .sorted(Comparator.comparingLong(p -> {
+                    .sorted(Comparator.<Path>comparingLong(p -> {
                         try {
                             return Files.getLastModifiedTime(p).toMillis();
                         } catch (IOException e) {
                             return 0;
                         }
-                    }))
+                    }).thenComparing(p -> p.getFileName().toString()))
                     .toList();
             
             while (backups.size() > MAX_DRAFT_PREV_BACKUPS) {
@@ -933,7 +1061,7 @@ public class DraftStorage extends BaseStorage {
         Set<String> normalized = new LinkedHashSet<>();
         for (String chapter : chapters) {
             String canonical = canonicalizeChapterId(chapter);
-            if (!canonical.isBlank()) {
+            if (CHAPTER_ID_PATTERN.matcher(canonical).matches()) {
                 normalized.add(canonical);
             }
         }
@@ -952,6 +1080,27 @@ public class DraftStorage extends BaseStorage {
             if (paragraph.isBlank()) {
                 continue;
             }
+            if (paragraph.length() > TEXT_CHUNK_MAX_LEN) {
+                if (current.length() > 0) {
+                    chunks.add(current.toString().trim());
+                    current.setLength(0);
+                }
+                for (int start = 0; start < paragraph.length();) {
+                    int end = Math.min(paragraph.length(), start + TEXT_CHUNK_MAX_LEN);
+                    if (end < paragraph.length()) {
+                        for (int i = end - 1; i > start + TEXT_CHUNK_MAX_LEN / 2; i--) {
+                            if ("。！？!?；;\n".indexOf(paragraph.charAt(i)) >= 0) {
+                                end = i + 1;
+                                break;
+                            }
+                        }
+                        if (Character.isHighSurrogate(paragraph.charAt(end - 1))) end--;
+                    }
+                    chunks.add(paragraph.substring(start, end));
+                    start = end;
+                }
+                continue;
+            }
             if (current.length() > 0 && current.length() + paragraph.length() + 2 > TEXT_CHUNK_MAX_LEN) {
                 chunks.add(current.toString().trim());
                 current.setLength(0);
@@ -967,14 +1116,6 @@ public class DraftStorage extends BaseStorage {
         return chunks;
     }
 
-    private double scoreChunk(String query, String chunk, ProjectLexicon projectLexicon) {
-        return TextSearchUtils.calculateHybridScore(query, chunk, null, projectLexicon);
-    }
-
-    private Set<String> tokenize(String text, ProjectLexicon projectLexicon) {
-        return TextSearchUtils.tokenSet(text, projectLexicon);
-    }
-
     private Path textChunkIndexDir(String projectId) {
         return getProjectPath(projectId).resolve(TEXT_CHUNK_INDEX_DIR);
     }
@@ -988,21 +1129,18 @@ public class DraftStorage extends BaseStorage {
             return Optional.empty();
         }
 
-        long metaMtime = lastModified(metaPath);
-        long chunksMtime = lastModified(chunksPath);
-        long invertedMtime = lastModified(invertedPath);
-        long stamp = Math.max(metaMtime, Math.max(chunksMtime, invertedMtime));
-
-        TextChunkIndexCache cache = this.textChunkIndexCache;
-        if (cache != null && cache.projectId.equals(projectId) && cache.lastModified == stamp) {
-            return Optional.of(cache.index);
-        }
-
         try {
+            List<IndexFileStamp> stamp = List.of(indexFileStamp(metaPath), indexFileStamp(chunksPath), indexFileStamp(invertedPath));
+            TextChunkIndexCache cache = this.textChunkIndexCache;
+            if (cache != null && cache.projectId.equals(projectId) && cache.stamp.equals(stamp)
+                    && projectLexicon.fingerprint().equals(cache.index.meta.get("lexicon_fingerprint")))
+                return Optional.of(cache.index);
             Map<String, Object> meta = jsonMapper.readValue(Files.readString(metaPath), new TypeReference<>() {});
             int tokenizerVersion = intValue(meta.get("tokenizer_version"), -1);
             int chunkingVersion = intValue(meta.get("chunking_version"), -1);
-            if (tokenizerVersion != TOKENIZER_VERSION || chunkingVersion != CHUNKING_VERSION) {
+            if (tokenizerVersion != TOKENIZER_VERSION || chunkingVersion != CHUNKING_VERSION
+                    || intValue(meta.get("format_version"), -1) != TEXT_INDEX_FORMAT
+                    || !(meta.get("source_hashes") instanceof Map<?, ?>)) {
                 return Optional.empty();
             }
             String lexiconFingerprint = stringValue(meta.get("lexicon_fingerprint"), "empty");
@@ -1010,13 +1148,16 @@ public class DraftStorage extends BaseStorage {
                 return Optional.empty();
             }
 
-            @SuppressWarnings("unchecked")
+            String chunksJson = Files.readString(chunksPath);
+            String invertedJson = Files.readString(invertedPath);
+            if (!textFingerprint(chunksJson).equals(meta.get("chunks_hash"))
+                    || !textFingerprint(invertedJson).equals(meta.get("inverted_hash"))) return Optional.empty();
             Map<String, ChunkMeta> chunks = jsonMapper.readValue(
-                    Files.readString(chunksPath),
+                    chunksJson,
                     new TypeReference<Map<String, ChunkMeta>>() {}
             );
             Map<String, List<String>> inverted = jsonMapper.readValue(
-                    Files.readString(invertedPath),
+                    invertedJson,
                     new TypeReference<Map<String, List<String>>>() {}
             );
 
@@ -1030,12 +1171,9 @@ public class DraftStorage extends BaseStorage {
         }
     }
 
-    private long lastModified(Path path) {
-        try {
-            return Files.getLastModifiedTime(path).toMillis();
-        } catch (IOException e) {
-            return 0L;
-        }
+    private IndexFileStamp indexFileStamp(Path path) throws IOException {
+        var attributes = Files.readAttributes(path, java.nio.file.attribute.BasicFileAttributes.class);
+        return new IndexFileStamp(attributes.lastModifiedTime(), attributes.size());
     }
 
     private int intValue(Object value, int fallback) {
@@ -1099,6 +1237,9 @@ public class DraftStorage extends BaseStorage {
             df.put(term, postings.size());
             double termWeight = queryWeights.getOrDefault(term, 1.0);
             for (String chunkId : postings) {
+                ChunkMeta chunk = index.chunks.get(chunkId);
+                if (chunk == null || !includeSet.isEmpty() && !includeSet.contains(chunk.chapter)
+                        || excludeSet.contains(chunk.chapter)) continue;
                 overlap.merge(chunkId, termWeight, Double::sum);
             }
         }
@@ -1106,7 +1247,10 @@ public class DraftStorage extends BaseStorage {
         int totalDocs = Math.max(index.chunks.size(), 1);
         double avgDocLen = doubleValue(index.meta.get("avg_doc_len"), 1.0);
         String normalizedQuery = query.toLowerCase(Locale.ROOT).trim();
-        PriorityQueue<ScoredChunk> heap = new PriorityQueue<>(Comparator.comparingDouble(a -> a.score));
+        Comparator<ScoredChunk> bestFirst = Comparator.comparingDouble(ScoredChunk::score).reversed()
+                .thenComparing(sc -> index.chunks.get(sc.chunkId).chapter, this::compareChapterIds)
+                .thenComparingInt(sc -> index.chunks.get(sc.chunkId).chunkIndex);
+        PriorityQueue<ScoredChunk> heap = new PriorityQueue<>(bestFirst.reversed());
         for (Map.Entry<String, Double> entry : overlap.entrySet()) {
             String chunkId = entry.getKey();
             double ov = entry.getValue();
@@ -1135,14 +1279,14 @@ public class DraftStorage extends BaseStorage {
 
             if (heap.size() < limit) {
                 heap.add(new ScoredChunk(chunkId, score));
-            } else if (score > heap.peek().score) {
+            } else if (bestFirst.compare(new ScoredChunk(chunkId, score), heap.peek()) < 0) {
                 heap.poll();
                 heap.add(new ScoredChunk(chunkId, score));
             }
         }
 
         List<ScoredChunk> top = new ArrayList<>(heap);
-        top.sort((a, b) -> Double.compare(b.score, a.score));
+        top.sort(bestFirst);
         List<Map<String, Object>> results = new ArrayList<>();
         for (ScoredChunk sc : top) {
             ChunkMeta meta = index.chunks.get(sc.chunkId);
@@ -1177,7 +1321,9 @@ public class DraftStorage extends BaseStorage {
                                   Map<String, List<String>> inverted) {
     }
 
-    private record TextChunkIndexCache(String projectId, long lastModified, TextChunkIndex index) {
+    private record IndexFileStamp(java.nio.file.attribute.FileTime modified, long size) {}
+
+    private record TextChunkIndexCache(String projectId, List<IndexFileStamp> stamp, TextChunkIndex index) {
     }
 
     private record ScoredChunk(String chunkId, double score) {

@@ -30,7 +30,7 @@ public class ConfigController {
     private final LlmGateway llmGateway;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private static final Set<String> ALLOWED_AGENTS = new LinkedHashSet<>(
-            List.of("archivist", "writer", "editor", "rewrite")
+            List.of("archivist", "writer", "editor", "rewrite", "extractor")
     );
 
     // ========== LLM Profiles ==========
@@ -151,7 +151,7 @@ public class ConfigController {
         Map<String, Object> assignments = readAssignments();
         boolean changed = false;
         for (String agent : ALLOWED_AGENTS) {
-            if (profileId.equals(stringValue(assignments.get(agent)))) {
+            if (profileId.equals(assignmentProfileId(assignments.get(agent)))) {
                 assignments.put(agent, "");
                 changed = true;
             }
@@ -179,7 +179,7 @@ public class ConfigController {
                 if (!ALLOWED_AGENTS.contains(e.getKey()) || e.getValue() == null) {
                     continue;
                 }
-                merged.put(e.getKey(), stringValue(e.getValue()));
+                merged.put(e.getKey(), normalizeAssignment(e.getValue()));
             }
         }
         writeAssignments(merged);
@@ -275,7 +275,7 @@ public class ConfigController {
         Path path = assignmentsPath();
         Map<String, Object> cleaned = new LinkedHashMap<>();
         for (String agent : ALLOWED_AGENTS) {
-            cleaned.put(agent, "");
+            cleaned.put(agent, normalizeAssignment(""));
         }
         if (!Files.exists(path)) return cleaned;
         try {
@@ -286,8 +286,12 @@ public class ConfigController {
                 profileIds.add(stringValue(profile.get("id")));
             }
             for (String agent : ALLOWED_AGENTS) {
-                String value = stringValue(assignments.get(agent));
-                cleaned.put(agent, profileIds.contains(value) ? value : "");
+                Map<String, Object> entry = normalizeAssignment(assignments.get(agent));
+                if (!profileIds.contains(stringValue(entry.get("profile_id")))) {
+                    entry.put("profile_id", "");
+                    entry.put("model", "");
+                }
+                cleaned.put(agent, entry);
             }
             return cleaned;
         } catch (IOException e) {
@@ -296,12 +300,39 @@ public class ConfigController {
         }
     }
 
+    /**
+     * 分工值归一化为 {profile_id, model}：
+     * 兼容旧的纯字符串 profileId；model 为空表示用档案自带模型。
+     */
+    private Map<String, Object> normalizeAssignment(Object value) {
+        Map<String, Object> entry = new LinkedHashMap<>();
+        if (value instanceof Map<?, ?> map) {
+            entry.put("profile_id", stringValue(map.get("profile_id")));
+            entry.put("model", stringValue(map.get("model")));
+        } else {
+            entry.put("profile_id", stringValue(value));
+            entry.put("model", "");
+        }
+        return entry;
+    }
+
+    private String assignmentProfileId(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            return stringValue(map.get("profile_id"));
+        }
+        return stringValue(value);
+    }
+
     private void writeAssignments(Map<String, Object> assignments) {
         try {
             Files.createDirectories(assignmentsPath().getParent());
             Map<String, Object> cleaned = new LinkedHashMap<>();
             for (String agent : ALLOWED_AGENTS) {
-                cleaned.put(agent, stringValue(assignments.get(agent)));
+                Map<String, Object> entry = normalizeAssignment(assignments.get(agent));
+                String profileId = stringValue(entry.get("profile_id"));
+                String model = stringValue(entry.get("model"));
+                // 无模型覆盖时仍写纯字符串，保持与旧格式兼容
+                cleaned.put(agent, (model.isBlank() || profileId.isBlank()) ? profileId : entry);
             }
             String content = objectMapper.writerWithDefaultPrettyPrinter()
                     .writeValueAsString(cleaned);

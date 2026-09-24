@@ -13,6 +13,9 @@ public class FeedbackRequest {
     private String feedback;
     private String action = "revise";
 
+    @JsonProperty("continuity_revision")
+    private String continuityRevision;
+
     @JsonProperty("rejected_entities")
     private List<String> rejectedEntities;
 }

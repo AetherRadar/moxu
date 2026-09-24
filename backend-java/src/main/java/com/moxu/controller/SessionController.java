@@ -1,6 +1,10 @@
 package com.moxu.controller;
 
 import com.moxu.agent.EditorAgent;
+import com.moxu.analysis.AnalysisJobRequest;
+import com.moxu.analysis.AnalysisJobService;
+import com.moxu.analysis.CausalAuditService;
+import jakarta.validation.Valid;
 import com.moxu.dto.*;
 import com.moxu.orchestrator.Orchestrator;
 import com.moxu.orchestrator.OrchestratorPool;
@@ -32,6 +36,59 @@ public class SessionController {
     private final EditorAgent editorAgent;
     private final DraftStorage draftStorage;
     private final MemoryPackStorage memoryPackStorage;
+    private final AnalysisJobService analysisJobs;
+    private final com.moxu.analysis.ContinuityService continuity;
+    private final CausalAuditService causal;
+
+    @GetMapping("/continuity/{chapter}/causal")
+    public Map<String, Object> causalStatus(@PathVariable String projectId, @PathVariable String chapter) throws java.io.IOException {
+        return causal.status(projectId, chapter);
+    }
+
+    @PostMapping("/continuity/{chapter}/causal/run")
+    public Map<String, Object> runCausal(@PathVariable String projectId, @PathVariable String chapter,
+            @Valid @RequestBody CausalAuditService.Request request) throws java.io.IOException {
+        return causal.run(projectId, chapter, request);
+    }
+
+    @PostMapping("/continuity/{chapter}/causal/cancel")
+    public Map<String, Object> cancelCausal(@PathVariable String projectId, @PathVariable String chapter) throws java.io.IOException {
+        return causal.cancel(projectId, chapter);
+    }
+
+    @PostMapping("/continuity/{chapter}/causal/decisions")
+    public Map<String, Object> decideCausal(@PathVariable String projectId, @PathVariable String chapter,
+            @Valid @RequestBody CausalAuditService.Decision decision) throws java.io.IOException {
+        return causal.decide(projectId, chapter, decision);
+    }
+
+    @GetMapping("/continuity/{chapter}/causal/graph")
+    public Map<String, Object> causalGraph(@PathVariable String projectId, @PathVariable String chapter) throws java.io.IOException {
+        return causal.graph(projectId, chapter);
+    }
+
+    @GetMapping("/continuity/{chapter}")
+    public Map<String, Object> continuityStatus(@PathVariable String projectId, @PathVariable String chapter) throws java.io.IOException {
+        return continuity.inspect(projectId, chapter);
+    }
+
+    @PostMapping("/continuity/{chapter}/sync")
+    public Map<String, Object> syncContinuity(@PathVariable String projectId, @PathVariable String chapter,
+            @RequestBody com.moxu.analysis.ContinuityService.Request request) throws java.io.IOException {
+        return continuity.sync(projectId, chapter, request);
+    }
+
+    @PostMapping("/continuity/{chapter}/acknowledge")
+    public Map<String, Object> acknowledgeContinuity(@PathVariable String projectId, @PathVariable String chapter,
+            @RequestBody com.moxu.analysis.ContinuityService.Request request) throws java.io.IOException {
+        return continuity.acknowledge(projectId, chapter, request.revision());
+    }
+
+    @PostMapping("/continuity/{chapter}/clean-removed")
+    public Map<String, Object> cleanRemovedContinuity(@PathVariable String projectId, @PathVariable String chapter,
+            @RequestBody com.moxu.analysis.ContinuityService.Request request) throws java.io.IOException {
+        return continuity.cleanRemoved(projectId, chapter, request.revision());
+    }
     
     /**
      * 开始写作会话
@@ -41,6 +98,7 @@ public class SessionController {
     public Map<String, Object> startSession(@PathVariable String projectId,
                                              @RequestBody StartSessionRequest request) {
         log.info("Starting session for project: {}, chapter: {}", projectId, request.getChapter());
+        continuity.requireReady(projectId, request.getChapter());
         
         Orchestrator orchestrator = orchestratorPool.getOrchestrator(projectId);
         orchestrator.setLanguage(request.getLanguage());
@@ -81,6 +139,7 @@ public class SessionController {
                                                @RequestBody FeedbackRequest request) {
         log.info("Processing feedback for project: {}, chapter: {}, action: {}",
                 projectId, request.getChapter(), request.getAction());
+        if ("revise".equals(request.getAction())) continuity.requireReady(projectId, request.getChapter());
         
         Orchestrator orchestrator = orchestratorPool.getOrchestrator(projectId);
         
@@ -89,7 +148,8 @@ public class SessionController {
                 request.getChapter(),
                 request.getFeedback(),
                 request.getAction(),
-                request.getRejectedEntities()
+                request.getRejectedEntities(),
+                request.getContinuityRevision()
         );
     }
     
@@ -213,6 +273,7 @@ public class SessionController {
     public Map<String, Object> answerQuestions(@PathVariable String projectId,
                                                 @RequestBody AnswerQuestionsRequest request) {
         log.info("Answer questions / proceed to write for project: {}, chapter: {}", projectId, request.getChapter());
+        continuity.requireReady(projectId, request.getChapter());
 
         Orchestrator orchestrator = orchestratorPool.getOrchestrator(projectId);
         orchestrator.setLanguage(request.getLanguage());
@@ -263,7 +324,7 @@ public class SessionController {
         
         Orchestrator orchestrator = orchestratorPool.getOrchestrator(projectId);
         orchestrator.setLanguage(request.getLanguage());
-        return orchestrator.analyzeChapter(
+        return analysisJobs.analyzeSingle(
                 projectId,
                 request.getChapter(),
                 request.getContent(),
@@ -277,7 +338,7 @@ public class SessionController {
      */
     @PostMapping("/save-analysis")
     public Map<String, Object> saveAnalysis(@PathVariable String projectId,
-                                             @RequestBody SaveAnalysisRequest request) {
+                                             @RequestBody SaveAnalysisRequest request) throws java.io.IOException {
         log.info("Saving analysis for project: {}", projectId);
 
         String chapter = request.getChapter();
@@ -285,7 +346,19 @@ public class SessionController {
         boolean overwrite = Boolean.TRUE.equals(request.getOverwrite());
 
         Orchestrator orchestrator = orchestratorPool.getOrchestrator(projectId);
-        return orchestrator.saveAnalysis(projectId, chapter, analysis, overwrite);
+        Map<String, Object> saved = analysisJobs.saveReviewed(projectId,
+                List.of(Map.of("chapter", chapter, "analysis", analysis)), overwrite, false);
+        if (saved.get("results") instanceof List<?> results && !results.isEmpty()
+                && results.getFirst() instanceof Map<?, ?> result) {
+            Map<String, Object> response = new LinkedHashMap<>();
+            result.forEach((key, value) -> response.put(key.toString(), value));
+            if (Boolean.FALSE.equals(saved.get("success"))) {
+                response.put("success", false);
+                response.put("error", saved.getOrDefault("error", "Analysis saving is incomplete"));
+            }
+            return response;
+        }
+        return saved;
     }
     
     /**
@@ -294,7 +367,7 @@ public class SessionController {
      */
     @PostMapping("/analyze-batch")
     public Map<String, Object> analyzeBatch(@PathVariable String projectId,
-                                             @RequestBody AnalyzeBatchRequest request) {
+                                             @Valid @RequestBody AnalysisJobRequest request) throws java.io.IOException {
         log.info("Batch analyzing chapters for project: {}", projectId);
 
         List<String> chapters = request.getChapters();
@@ -302,7 +375,7 @@ public class SessionController {
         if (request.getLanguage() != null && !request.getLanguage().isBlank()) {
             orchestrator.setLanguage(request.getLanguage());
         }
-        return orchestrator.analyzeBatch(projectId, chapters);
+        return analysisJobs.run(projectId, request, false);
     }
     
     /**
@@ -311,7 +384,7 @@ public class SessionController {
      */
     @PostMapping("/analyze-sync")
     public Map<String, Object> analyzeSync(@PathVariable String projectId,
-                                            @RequestBody AnalyzeSyncRequest request) {
+                                            @Valid @RequestBody AnalysisJobRequest request) throws java.io.IOException {
         log.info("Sync analyzing chapters for project: {}", projectId);
 
         List<String> chapters = request.getChapters();
@@ -319,7 +392,20 @@ public class SessionController {
         if (request.getLanguage() != null && !request.getLanguage().isBlank()) {
             orchestrator.setLanguage(request.getLanguage());
         }
-        return orchestrator.analyzeSync(projectId, chapters);
+        return analysisJobs.run(projectId, request, true);
+    }
+
+    @GetMapping("/analysis-jobs/{jobId}")
+    public Map<String, Object> analysisJob(@PathVariable String projectId, @PathVariable String jobId) throws java.io.IOException {
+        return analysisJobs.status(projectId, jobId);
+    }
+    @PostMapping("/analysis-jobs/{jobId}/cancel")
+    public Map<String, Object> cancelAnalysisJob(@PathVariable String projectId, @PathVariable String jobId) throws java.io.IOException {
+        return analysisJobs.cancel(projectId, jobId);
+    }
+    @GetMapping("/analysis-book-summary")
+    public Map<String, Object> bookSummary(@PathVariable String projectId) throws java.io.IOException {
+        return analysisJobs.bookSummary(projectId);
     }
     
     /**
@@ -328,7 +414,7 @@ public class SessionController {
      */
     @PostMapping("/save-analysis-batch")
     public Map<String, Object> saveAnalysisBatch(@PathVariable String projectId,
-                                                  @RequestBody SaveAnalysisBatchRequest request) {
+                                                  @RequestBody SaveAnalysisBatchRequest request) throws java.io.IOException {
         log.info("Batch saving analysis for project: {}", projectId);
 
         List<Map<String, Object>> items = new ArrayList<>();
@@ -346,7 +432,7 @@ public class SessionController {
         boolean overwrite = Boolean.TRUE.equals(request.getOverwrite());
 
         Orchestrator orchestrator = orchestratorPool.getOrchestrator(projectId);
-        return orchestrator.saveAnalysisBatch(projectId, items, overwrite);
+        return analysisJobs.saveReviewed(projectId, items, overwrite);
     }
     
     /**
@@ -357,6 +443,7 @@ public class SessionController {
     public Flux<String> streamDraft(@PathVariable String projectId,
                                      @RequestParam String chapter) {
         log.info("Stream draft for project: {}, chapter: {}", projectId, chapter);
+        continuity.requireReady(projectId, chapter);
 
         Orchestrator orchestrator = orchestratorPool.getOrchestrator(projectId);
 

@@ -119,16 +119,26 @@ function OutlineEditor({
   onSave,
   placeholder,
   minRows = 8,
+  inject = null,
 }: {
   saved: string;
   saving: boolean;
   onSave: (content: string) => void;
   placeholder: string;
   minRows?: number;
+  /** 生成类结果注入草稿（不落盘）：nonce 变化即采用，交由用户检查后保存 */
+  inject?: { nonce: number; text: string } | null;
 }): ReactNode {
   const [draft, setDraft] = useState(saved);
   const lastSaved = useRef(saved);
   const dirty = draft !== saved;
+
+  // 渲染期调整 state 代替 effect（同 VolumeSummaryEditor）：nonce 变了就注入
+  const [appliedNonce, setAppliedNonce] = useState(-1);
+  if (inject !== null && inject.nonce !== appliedNonce) {
+    setAppliedNonce(inject.nonce);
+    setDraft(inject.text);
+  }
 
   // 外部内容变化（反推/采纳候选/刷新）时：编辑器干净则跟随，脏则保留用户输入
   useEffect(() => {
@@ -213,9 +223,9 @@ function CandidateCards({
             </Button>
             <span className="tnum text-2xs text-ink-600">
               {candidate.planned_volume_count_hint !== undefined
-                ? `约 ${candidate.planned_volume_count_hint} 卷`
+                ? `全书预估约 ${candidate.planned_volume_count_hint} 卷`
                 : candidate.chapter_count_hint !== undefined
-                  ? `约 ${candidate.chapter_count_hint} 章`
+                  ? `本卷预估约 ${candidate.chapter_count_hint} 章`
                   : ''}
             </span>
           </div>
@@ -481,7 +491,9 @@ function VolumeOutlineSection({
               />
             </label>
           </div>
-          <p className="text-2xs text-ink-500">建议每次规划 3–6 章，保留后续剧情的展开空间。</p>
+          <p className="text-2xs text-ink-500">
+            这里只决定本次拆出几章细纲；候选上的「约 N 章」是整卷长度估计，不受影响。建议每次 3–6 章。
+          </p>
           <Button
             tone="outline"
             size="sm"
@@ -582,12 +594,20 @@ function ChaptersTab({ projectId }: { projectId: string }): ReactNode {
     [allChapters],
   );
 
+  const [injected, setInjected] = useState<{ nonce: number; text: string } | null>(null);
+
   const generate = useMutation({
     mutationFn: ({ instruction }: { instruction: string }) =>
       outlineApi.generate(projectId, { chapter_id: chapterId ?? '', instruction }),
-    onSuccess: () => {
-      void outline.refetch();
-      toast.success('已生成章纲');
+    onSuccess: (data) => {
+      // 后端不落盘，content 只在响应里——注入草稿交给用户检查后保存
+      const text = data.content.trim();
+      if (text === '') {
+        toast.info('模型没返回可用内容');
+        return;
+      }
+      setInjected({ nonce: Date.now(), text });
+      toast.success('已生成章纲，检查后点「保存」落盘');
     },
     onError: (error) => toast.error(reason(error, '生成章纲失败')),
   });
@@ -628,6 +648,7 @@ function ChaptersTab({ projectId }: { projectId: string }): ReactNode {
             onSave={(text) => save.mutate(text)}
             placeholder={`${formatChapterLabel(chapterId)}${chapterNode?.title ? ` · ${chapterNode.title}` : ''} 的可执行章纲…`}
             minRows={7}
+            inject={injected}
           />
           <div className="flex items-center gap-2">
             <Input

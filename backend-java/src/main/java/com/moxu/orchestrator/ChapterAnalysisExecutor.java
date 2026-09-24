@@ -1,6 +1,7 @@
 package com.moxu.orchestrator;
 
 import com.moxu.agent.ArchivistAgent;
+import com.moxu.analysis.AnalysisContext;
 import com.moxu.model.entity.ChapterSummary;
 import jakarta.annotation.PreDestroy;
 import org.springframework.beans.factory.annotation.Value;
@@ -38,11 +39,12 @@ public class ChapterAnalysisExecutor implements AutoCloseable {
         long started = System.nanoTime();
         ExecutorCompletionService<Stage> completion = new ExecutorCompletionService<>(executor);
         List<Future<Stage>> tasks = new ArrayList<>(2);
+        AnalysisContext scope = AnalysisContext.current();
         try {
             tasks.add(completion.submit(() -> limited("summary", () -> new Stage(
-                    agent.generateChapterSummary(projectId, chapter, title, content), null, "", 0))));
+                    AnalysisContext.stage(scope, "summary", () -> agent.generateChapterSummary(projectId, chapter, title, content)), null, "", 0))));
             tasks.add(completion.submit(() -> limited("canon", () -> new Stage(
-                    null, agent.extractCanonUpdates(projectId, chapter, content), "", 0))));
+                    null, AnalysisContext.stage(scope, "canon", () -> agent.extractCanonUpdates(projectId, chapter, content)), "", 0))));
             ChapterSummary summary = null;
             Map<String, Object> canon = null;
             Map<String, Long> timings = new LinkedHashMap<>();
@@ -63,6 +65,7 @@ public class ChapterAnalysisExecutor implements AutoCloseable {
         } finally {
             // Completion order detects either failure promptly and cancels its sibling.
             tasks.forEach(task -> task.cancel(true));
+            if (scope != null) scope.awaitCalls();
         }
     }
 

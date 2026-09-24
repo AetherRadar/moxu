@@ -12,6 +12,7 @@ import org.junit.jupiter.api.io.TempDir;
 import reactor.core.publisher.Flux;
 
 import java.nio.file.Path;
+import java.nio.file.Files;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -24,11 +25,87 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class WriterAgentTokenBudgetTest {
 
     @TempDir
     Path tempDir;
+
+    @Test
+    void protectsFreshEndingFromMemoryTruncationInBothStreamingEntrypoints() throws Exception {
+        RecordingGateway gateway = new RecordingGateway();
+        NoopDraftStorage storage = new NoopDraftStorage(tempDir);
+        WriterAgent agent = new WriterAgent(gateway, new CardStorage(), storage, null);
+        Path path = tempDir.resolve("p/drafts/V1C1/final.md");
+        Files.createDirectories(path.getParent());
+        Files.writeString(path, "Earlier prose.\n".repeat(300) + "卡片已塞进内袋。\n右手印记不再发热。");
+        Map<String, Object> context = Map.of("sceneBrief", SceneBrief.builder().chapter("V1C2").build(),
+                "working_memory", "M".repeat(5000));
+        agent.executeStreamDraft("p", "V1C2", context).collectList().block();
+        String prompt = gateway.joinPrompt(gateway.lastStreamMessages);
+        assertTrue(prompt.contains("Previous Chapter Ending [V1C1]"));
+        assertTrue(prompt.contains("卡片已塞进内袋。"));
+        assertTrue(prompt.contains("右手印记不再发热。"));
+        assertFalse(prompt.contains("M".repeat(3000)));
+        assertFalse(prompt.contains("Earlier prose.\n".repeat(200)));
+        assertFalse(context.containsKey("project_id"), "Do not mutate shared input context");
+        Files.writeString(path, "卡片已交给同伴保管。");
+        agent.executeStreamDraft("p", "V1C2", context, 2048).collectList().block();
+        prompt = gateway.joinPrompt(gateway.lastStreamMessages);
+        assertTrue(prompt.contains("卡片已交给同伴保管。"));
+        assertFalse(prompt.contains("卡片已塞进内袋。"));
+    }
+
+    @Test
+    void executeAddsContinuityAndDoesNotTrustAnUnrelatedContextProject() throws Exception {
+        RecordingGateway gateway = new RecordingGateway();
+        NoopDraftStorage storage = new NoopDraftStorage(tempDir);
+        WriterAgent agent = new WriterAgent(gateway, new CardStorage(), storage, null);
+        Path path = tempDir.resolve("p/drafts/V1C1/final.md");
+        Files.createDirectories(path.getParent());
+        Files.writeString(path, "门外的点名声仍未停下。");
+        var context = Map.<String, Object>of("sceneBrief", SceneBrief.builder().chapter("V1C2").build(),
+                "project_id", "other", "working_memory", "brief");
+        assertEquals(true, agent.execute("p", "V1C2", context).get("success"));
+        assertTrue(gateway.joinPrompt(gateway.lastStreamMessages).contains("门外的点名声仍未停下。"));
+    }
+
+    @Test
+    void protectsEarlyTimeAnchorsAndUnresolvedGapsFromMemoryTruncation() throws Exception {
+        RecordingGateway gateway = new RecordingGateway();
+        NoopDraftStorage storage = new NoopDraftStorage(tempDir);
+        WriterAgent agent = new WriterAgent(gateway, new CardStorage(), storage, null);
+        Path path = tempDir.resolve("p/drafts/V1C1/final.md");
+        Files.createDirectories(path.getParent());
+        Files.writeString(path, "第二天一早，辅导员开始点名。\n" + "房间寂静。\n".repeat(600)
+                + "他将学生证塞进内袋。");
+        var context = Map.<String, Object>of("sceneBrief", SceneBrief.builder().chapter("V1C2").build(),
+                "working_memory", "M".repeat(5000),
+                "unresolved_gaps", List.of(Map.of("text", "钥匙属于谁尚未查明，不能认定已转交。")));
+        agent.executeStreamDraft("p", "V1C2", context).collectList().block();
+        String prompt = gateway.joinPrompt(gateway.lastStreamMessages);
+        assertTrue(prompt.contains("第二天一早，辅导员开始点名。"));
+        assertTrue(prompt.contains("他将学生证塞进内袋。"));
+        assertTrue(prompt.contains("钥匙属于谁尚未查明，不能认定已转交。"));
+        assertFalse(prompt.contains("M".repeat(3000)));
+    }
+
+    @Test void sceneRelevantMemoryAfterLongBackgroundSurvivesAndOversizedGapsStopBeforeCall() {
+        RecordingGateway gateway = new RecordingGateway();
+        WriterAgent agent = new WriterAgent(gateway, new CardStorage(), new NoopDraftStorage(tempDir), null);
+        var brief = SceneBrief.builder().chapter("V1C2").goal("Alice finds the key")
+                .characters(List.of(Map.of("name", "Alice"))).build();
+        Map<String, Object> context = new LinkedHashMap<>();
+        context.put("sceneBrief", brief);
+        context.put("working_memory", "Weather is pleasant.\n".repeat(400) + "Alice keeps the key in her pocket.");
+        agent.executeStreamDraft("p", "V1C2", context).collectList().block();
+        assertTrue(gateway.joinPrompt(gateway.lastStreamMessages).contains("Alice keeps the key in her pocket."));
+        gateway.lastStreamMessages = List.of();
+        context.put("unresolved_gaps", List.of(Map.of("text", "Unknown constraint ".repeat(200))));
+        assertThrows(IllegalStateException.class, () -> agent.executeStreamDraft("p", "V1C2", context).collectList().block());
+        assertTrue(gateway.lastStreamMessages.isEmpty());
+    }
 
     @Test
     void execute_usesScaledStreamBudgetForDraft() {
